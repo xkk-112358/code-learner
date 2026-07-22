@@ -1,0 +1,8 @@
+{
+  "code-learner.openAsNotebook": "以 Jupyter Notebook 打开",
+  "code-learner.configure": "配置 AI 提供商",
+  "code-learner.explainCell": "解释该单元格",
+  "code-learner.explainCellBelow": "在下方解释",
+  "code-learner.explainSelected": "解释该代码",
+  "code-learner.convertAllToComments": "全部转为注释"
+}

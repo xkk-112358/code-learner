@@ -1,0 +1,141 @@
+{
+  "name": "code-learner",
+  "displayName": "Code Learner",
+  "description": "Open any code file as a Jupyter notebook with AI-powered cell explanations",
+  "version": "0.2.0",
+  "publisher": "code-learner",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Education",
+    "Notebooks",
+    "Machine Learning"
+  ],
+  "keywords": [
+    "jupyter", "notebook", "learn", "code", "explain", "ai", "ipynb"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "code-learner.openAsNotebook",
+        "title": "%code-learner.openAsNotebook%"
+      },
+      {
+        "command": "code-learner.configure",
+        "title": "%code-learner.configure%"
+      },
+      {
+        "command": "code-learner.explainCell",
+        "title": "%code-learner.explainCell%",
+        "icon": "$(lightbulb)"
+      },
+      {
+        "command": "code-learner.explainCellBelow",
+        "title": "%code-learner.explainCellBelow%",
+        "icon": "$(add)"
+      },
+      {
+        "command": "code-learner.explainSelected",
+        "title": "%code-learner.explainSelected%"
+      },
+      {
+        "command": "code-learner.convertAllToComments",
+        "title": "%code-learner.convertAllToComments%"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "code-learner.openAsNotebook",
+          "group": "code-learner@1",
+          "when": "editorLangId != 'ipynb' && editorHasSelection == false"
+        },
+        {
+          "command": "code-learner.explainSelected",
+          "group": "code-learner@2",
+          "when": "editorHasSelection && (editorLangId != 'ipynb' || notebookCellExecutable == true)"
+        },
+        {
+          "command": "code-learner.convertAllToComments",
+          "group": "code-learner@3"
+        }
+      ],
+      "notebook/cell/title": [
+        {
+          "command": "code-learner.explainCell",
+          "group": "code-learner@1"
+        },
+        {
+          "command": "code-learner.explainCellBelow",
+          "group": "code-learner@2"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Code Learner",
+      "properties": {
+        "codeLearner.provider": {
+          "type": "string",
+          "enum": ["openai", "claude"],
+          "default": "openai",
+          "description": "AI provider for code explanations"
+        },
+        "codeLearner.openaiEndpoint": {
+          "type": "string",
+          "default": "https://api.openai.com/v1",
+          "description": "OpenAI-compatible API endpoint URL"
+        },
+        "codeLearner.openaiModel": {
+          "type": "string",
+          "default": "gpt-4o-mini",
+          "description": "OpenAI model name"
+        },
+        "codeLearner.claudeEndpoint": {
+          "type": "string",
+          "default": "https://api.anthropic.com",
+          "description": "Anthropic API endpoint URL"
+        },
+        "codeLearner.claudeModel": {
+          "type": "string",
+          "default": "claude-sonnet-4-20250514",
+          "description": "Claude model name"
+        },
+        "codeLearner.maxTokens": {
+          "type": "integer",
+          "default": 2000,
+          "minimum": 500,
+          "maximum": 8000,
+          "description": "Maximum tokens per AI explanation"
+        },
+        "codeLearner.temperature": {
+          "type": "number",
+          "default": 0.3,
+          "minimum": 0,
+          "maximum": 1,
+          "description": "AI temperature"
+        },
+        "codeLearner.cacheEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Cache explanations"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  }
+}

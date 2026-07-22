@@ -1,0 +1,8 @@
+{
+  "code-learner.openAsNotebook": "Open as Jupyter Notebook",
+  "code-learner.configure": "Configure AI Provider",
+  "code-learner.explainCell": "Explain This Cell",
+  "code-learner.explainCellBelow": "Explain Below",
+  "code-learner.explainSelected": "Explain This Code",
+  "code-learner.convertAllToComments": "Convert All to Comments"
+}
