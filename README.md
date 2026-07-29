@@ -34,31 +34,31 @@
 
 按 `Ctrl+Shift+P` 打开命令面板，搜索 `Code Learner: Configure AI Provider`，选择 OpenAI 或 Claude 并输入 API Key。
 
-![配置 AI 提供商](pictures/3.png)
+![配置 AI 提供商](https://raw.githubusercontent.com/xkk-112358/code-learner/main/pictures/3.png)
 
 **2. 解释代码**
 
 选中代码 → 右键 → **解释该代码**，AI 会流式输出解释。
 
-![解释代码](pictures/1.png)
+![解释代码](https://raw.githubusercontent.com/xkk-112358/code-learner/main/pictures/1.png)
 
 **3. 查看 AI 分析**
 
 代码末尾会出现 💡 图标，鼠标悬停即可查看 AI 的完整分析。
 
-![AI 分析](pictures/2.png)
+![AI 分析](https://raw.githubusercontent.com/xkk-112358/code-learner/main/pictures/2.png)
 
 **4. 以 Notebook 打开**
 
 点击编辑器顶部的 **Open as Jupyter Notebook**，将代码一键转为 `.ipynb` 格式。
 
-![Open as Notebook](pictures/4.png)
+![Open as Notebook](https://raw.githubusercontent.com/xkk-112358/code-learner/main/pictures/4.png)
 
 **5. 浏览 Notebook**
 
 转换后的 Notebook 保留了原始代码结构，可按单元格浏览。
 
-![Notebook 结果](pictures/5.png)
+![Notebook 结果](https://raw.githubusercontent.com/xkk-112358/code-learner/main/pictures/5.png)
 
 ### 📋 命令
 
@@ -112,31 +112,31 @@
 
 Press `Ctrl+Shift+P`, search for `Code Learner: Configure AI Provider`, choose OpenAI or Claude and enter your API key.
 
-![Configure AI Provider](pictures/3.png)
+![Configure AI Provider](https://raw.githubusercontent.com/xkk-112358/code-learner/main/pictures/3.png)
 
 **2. Explain Code**
 
 Select code → Right-click → **Explain This Code**. AI explanation will stream in real-time.
 
-![Explain Code](pictures/1.png)
+![Explain Code](https://raw.githubusercontent.com/xkk-112358/code-learner/main/pictures/1.png)
 
 **3. View AI Analysis**
 
 A 💡 icon appears at the end of the code. Hover over it to see the full AI analysis.
 
-![AI Analysis](pictures/2.png)
+![AI Analysis](https://raw.githubusercontent.com/xkk-112358/code-learner/main/pictures/2.png)
 
 **4. Open as Notebook**
 
 Click **Open as Jupyter Notebook** at the top of the editor to convert your code file into `.ipynb` format.
 
-![Open as Notebook](pictures/4.png)
+![Open as Notebook](https://raw.githubusercontent.com/xkk-112358/code-learner/main/pictures/4.png)
 
 **5. Browse the Notebook**
 
 The converted notebook preserves the original code structure for cell-by-cell browsing.
 
-![Notebook Result](pictures/5.png)
+![Notebook Result](https://raw.githubusercontent.com/xkk-112358/code-learner/main/pictures/5.png)
 
 ### 📋 Commands
 
