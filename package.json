@@ -5,6 +5,7 @@
   "version": "0.2.0",
   "publisher": "code-learner",
   "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/xkk-112358/code-learner.git" },
   "icon": "tb.jpg",
   "engines": {
     "vscode": "^1.85.0"

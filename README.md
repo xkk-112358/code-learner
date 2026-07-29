@@ -28,34 +28,37 @@
 - 💭 **转为注释** — AI 解释一键转为代码注释，永久保存
 - 🗂️ **15+ 语言** — Python、JS/TS、Java、C/C++、Go、Rust 等
 
-### 🚀 快速开始
+### 🚀 使用流程
 
-#### 1. 安装
+**1. 配置 AI 提供商**
 
-```bash
-git clone https://github.com/xkk-112358/code-learner.git
-cd code-learner
-npm install
-npm run compile
-```
+按 `Ctrl+Shift+P` 打开命令面板，搜索 `Code Learner: Configure AI Provider`，选择 OpenAI 或 Claude 并输入 API Key。
 
-然后在 VS Code 中按 `F5` 启动扩展开发主机。
+![配置 AI 提供商](pictures/3.png)
 
-#### 2. 配置 API Key
+**2. 解释代码**
 
-按 `Ctrl+Shift+P` 打开命令面板，运行：
+选中代码 → 右键 → **解释该代码**，AI 会流式输出解释。
 
-```
-Code Learner: Configure AI Provider
-```
+![解释代码](pictures/1.png)
 
-选择 OpenAI 或 Claude，输入 API Key。
+**3. 查看 AI 分析**
 
-#### 3. 使用
+代码末尾会出现 💡 图标，鼠标悬停即可查看 AI 的完整分析。
 
-- 打开任意代码文件
-- 点击编辑器顶部的 **Open as Jupyter Notebook**，或悬停在 💡 图标上查看 AI 解释
-- 选中代码 → 右键 → **解释该代码**
+![AI 分析](pictures/2.png)
+
+**4. 以 Notebook 打开**
+
+点击编辑器顶部的 **Open as Jupyter Notebook**，将代码一键转为 `.ipynb` 格式。
+
+![Open as Notebook](pictures/4.png)
+
+**5. 浏览 Notebook**
+
+转换后的 Notebook 保留了原始代码结构，可按单元格浏览。
+
+![Notebook 结果](pictures/5.png)
 
 ### 📋 命令
 
@@ -76,28 +79,6 @@ Code Learner: Configure AI Provider
 | `codeLearner.maxTokens` | `2000` | 每次最大 token 数 |
 | `codeLearner.temperature` | `0.3` | AI 温度 |
 | `codeLearner.cacheEnabled` | `true` | 启用缓存 |
-
-### 📁 项目结构
-
-```
-src/
-├── parser/          # 代码解析器（自动分块）
-│   ├── cell.ts      # 数据模型
-│   ├── base-parser.ts
-│   ├── auto-splitter.ts
-│   └── python-parser.ts, js-ts-parser.ts ...
-├── ai/              # AI 服务层
-│   ├── openai-provider.ts
-│   ├── claude-provider.ts
-│   ├── ai-service-manager.ts
-│   ├── cache.ts
-│   └── nb-generator.ts
-├── ui/              # 用户界面
-│   ├── codelens-provider.ts
-│   ├── hover-provider.ts
-│   └── sidebar/
-└── utils/           # 工具函数
-```
 
 ### 🔒 隐私
 
@@ -125,34 +106,37 @@ src/
 - 💭 **To Comments** — Convert AI explanations into code comments
 - 🗂️ **15+ languages** — Python, JS/TS, Java, C/C++, Go, Rust, and more
 
-### 🚀 Quick Start
+### 🚀 Usage
 
-#### 1. Install
+**1. Configure AI Provider**
 
-```bash
-git clone https://github.com/xkk-112358/code-learner.git
-cd code-learner
-npm install
-npm run compile
-```
+Press `Ctrl+Shift+P`, search for `Code Learner: Configure AI Provider`, choose OpenAI or Claude and enter your API key.
 
-Press `F5` in VS Code to launch the Extension Development Host.
+![Configure AI Provider](pictures/3.png)
 
-#### 2. Configure API Key
+**2. Explain Code**
 
-Open Command Palette (`Ctrl+Shift+P`) and run:
+Select code → Right-click → **Explain This Code**. AI explanation will stream in real-time.
 
-```
-Code Learner: Configure AI Provider
-```
+![Explain Code](pictures/1.png)
 
-Choose OpenAI or Claude, then enter your API key.
+**3. View AI Analysis**
 
-#### 3. Usage
+A 💡 icon appears at the end of the code. Hover over it to see the full AI analysis.
 
-- Open any code file
-- Click **Open as Jupyter Notebook** at the top, or hover over 💡 icons for AI explanations
-- Select code → Right-click → **Explain Selected**
+![AI Analysis](pictures/2.png)
+
+**4. Open as Notebook**
+
+Click **Open as Jupyter Notebook** at the top of the editor to convert your code file into `.ipynb` format.
+
+![Open as Notebook](pictures/4.png)
+
+**5. Browse the Notebook**
+
+The converted notebook preserves the original code structure for cell-by-cell browsing.
+
+![Notebook Result](pictures/5.png)
 
 ### 📋 Commands
 
@@ -174,28 +158,6 @@ Choose OpenAI or Claude, then enter your API key.
 | `codeLearner.temperature` | `0.3` | AI temperature |
 | `codeLearner.cacheEnabled` | `true` | Enable cache |
 
-### 📁 Project Structure
-
-```
-src/
-├── parser/          # Code parsers (cell splitting)
-│   ├── cell.ts      # Data model
-│   ├── base-parser.ts
-│   ├── auto-splitter.ts
-│   └── python-parser.ts, js-ts-parser.ts ...
-├── ai/              # AI service layer
-│   ├── openai-provider.ts
-│   ├── claude-provider.ts
-│   ├── ai-service-manager.ts
-│   ├── cache.ts
-│   └── nb-generator.ts
-├── ui/              # User interface
-│   ├── codelens-provider.ts
-│   ├── hover-provider.ts
-│   └── sidebar/
-└── utils/           # Utilities
-```
-
 ### 🔒 Privacy
 
 - API keys encrypted via VS Code SecretStorage
@@ -208,6 +170,6 @@ src/
 
 **MIT License** · VS Code ^1.85.0 · v0.2.0
 
- Made with ❤️
+ Made By: xkk-112358
 
 </div>
