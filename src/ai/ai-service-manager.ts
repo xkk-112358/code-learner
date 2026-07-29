@@ -16,6 +16,10 @@ export class AIServiceManager {
   private cache: ExplanationCache;
   private settings: CodeLearnerSettings;
 
+  // Project context cache — avoids re-scanning the workspace on every explainCell call
+  private projectCache: { key: string; result: { fileTree: string; files: ProjectFileInfo[] }; timestamp: number } | null = null;
+  private readonly PROJECT_CACHE_TTL = 30_000; // 30 seconds
+
   constructor(settings: CodeLearnerSettings, cache: ExplanationCache) {
     this.settings = settings;
     this.cache = cache;
@@ -52,6 +56,12 @@ export class AIServiceManager {
    * Build comprehensive project context: file tree + key file contents
    */
   private async getProjectContext(filePath: string): Promise<{ fileTree: string; files: ProjectFileInfo[] }> {
+    // Check cache
+    const now = Date.now();
+    if (this.projectCache && this.projectCache.key === filePath && (now - this.projectCache.timestamp) < this.PROJECT_CACHE_TTL) {
+      return this.projectCache.result;
+    }
+
     let fileTree = '';
     const files: ProjectFileInfo[] = [];
     const thisFileName = filePath.split(/[/\\]/).pop() || '';
@@ -59,7 +69,10 @@ export class AIServiceManager {
     try {
       // Find workspace root
       const workspaceFolders = vscode.workspace.workspaceFolders;
-      if (!workspaceFolders || workspaceFolders.length === 0) return { fileTree: '', files };
+      if (!workspaceFolders || workspaceFolders.length === 0) {
+        this.projectCache = { key: filePath, result: { fileTree: '', files }, timestamp: now };
+        return { fileTree: '', files };
+      }
 
       const rootUri = workspaceFolders[0].uri;
       const rootPath = rootUri.fsPath;
@@ -103,6 +116,8 @@ export class AIServiceManager {
       fileTree = treeLines.join('\n');
     } catch { /* no workspace */ }
 
+    // Cache result for subsequent calls
+    this.projectCache = { key: filePath, result: { fileTree, files }, timestamp: now };
     return { fileTree, files };
   }
 
@@ -152,17 +167,13 @@ export class AIServiceManager {
     };
 
     let accumulated = '';
-    try {
-      for await (const chunk of provider.explainCell(request)) {
-        accumulated += chunk;
-        yield chunk;
-      }
+    for await (const chunk of provider.explainCell(request)) {
+      accumulated += chunk;
+      yield chunk;
+    }
 
-      if (config.cacheEnabled && accumulated) {
-        this.cache.set(cell, filePath, explanationLang, accumulated);
-      }
-    } catch (error) {
-      throw error;
+    if (config.cacheEnabled && accumulated) {
+      this.cache.set(cell, filePath, explanationLang, accumulated);
     }
   }
 

@@ -4,5 +4,6 @@
   "code-learner.explainCell": "Explain This Cell",
   "code-learner.explainCellBelow": "Explain Below",
   "code-learner.explainSelected": "Explain This Code",
-  "code-learner.convertAllToComments": "Convert All to Comments"
+  "code-learner.convertAllToComments": "Convert All to Comments",
+  "code-learner.deleteAtCursor": "Delete All AI Explanations"
 }

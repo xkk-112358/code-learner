@@ -9,6 +9,16 @@ export interface CellMapping {
   cellIndex: number; pyStartLine: number; pyEndLine: number; originalSource: string;
 }
 
+/** Minimal structure for notebook JSON used in sync operations. */
+interface NotebookJson {
+  metadata?: {
+    codeLearner?: {
+      cellMapping?: Array<{ cellIndex: number; pyStartLine: number; pyEndLine: number }>;
+    };
+  };
+  cells?: Array<{ source: string[]; cell_type: string }>;
+}
+
 /**
  * Build cell mappings by matching notebook cell content to .py source.
  */
@@ -48,7 +58,7 @@ export function buildCellMapping(
   return mappings;
 }
 
-export function storeCellMapping(nbJson: any, mappings: CellMapping[]): void {
+export function storeCellMapping(nbJson: NotebookJson, mappings: CellMapping[]): void {
   if (!nbJson.metadata) nbJson.metadata = {};
   if (!nbJson.metadata.codeLearner) nbJson.metadata.codeLearner = {};
   nbJson.metadata.codeLearner.cellMapping = mappings.map(m => ({
@@ -56,7 +66,7 @@ export function storeCellMapping(nbJson: any, mappings: CellMapping[]): void {
   }));
 }
 
-export function readCellMapping(nbJson: any): { cellIndex: number; pyStartLine: number; pyEndLine: number }[] {
+export function readCellMapping(nbJson: NotebookJson): { cellIndex: number; pyStartLine: number; pyEndLine: number }[] {
   return nbJson?.metadata?.codeLearner?.cellMapping || [];
 }
 
@@ -70,7 +80,7 @@ export async function syncNotebookToSource(
   pyFilePath: string,
   cellIndex: number,
   newCellSource: string,
-  nbJson: any,
+  nbJson: NotebookJson,
   nbFilePath?: string  // notebook file path for saving mapping
 ): Promise<boolean> {
   const mappings = readCellMapping(nbJson);

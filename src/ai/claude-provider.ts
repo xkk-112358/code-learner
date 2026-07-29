@@ -4,7 +4,7 @@
  */
 
 import { AIProvider, AIProviderConfig, ExplanationRequest } from './provider';
-import { nodeRequest, parseSSEStream } from './streaming';
+import { nodeRequest, parseSSEStream, readStreamToString } from './streaming';
 import { buildExplanationPrompt } from './prompt-builder';
 
 export class ClaudeProvider implements AIProvider {
@@ -79,10 +79,11 @@ export class ClaudeProvider implements AIProvider {
               throw new Error(parsed.error?.message || 'Claude API error');
           }
         } catch (e) {
-          if (e instanceof Error && (e as any).message !== 'Claude API error') {
+          const err = e instanceof Error ? e : new Error(String(e));
+          if (err.message !== 'Claude API error') {
             continue;
           }
-          throw e;
+          throw err;
         }
       }
     } catch (error) {
@@ -101,13 +102,4 @@ export class ClaudeProvider implements AIProvider {
       this.abortController = null;
     }
   }
-}
-
-function readStreamToString(stream: NodeJS.ReadableStream): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    stream.on('data', (chunk: Buffer) => chunks.push(chunk));
-    stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
-    stream.on('error', reject);
-  });
 }

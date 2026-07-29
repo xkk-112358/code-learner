@@ -19,19 +19,20 @@ export abstract class BaseParser {
    * Parse a VS Code TextDocument into CodeCells
    */
   parse(document: vscode.TextDocument, options?: Partial<ParseOptions>): CodeCell[] {
+    const lines = this.getLines(document, options?.maxLines ?? DEFAULT_PARSE_OPTIONS.maxLines);
+    return this.parseLines(lines, document.languageId, options);
+  }
+
+  /**
+   * Pure-function entry point for parsing lines into CodeCells.
+   * Takes raw string lines instead of a TextDocument, making it testable
+   * without VS Code mocking. Used by the parse() method above and by unit tests.
+   */
+  parseLines(lines: string[], language: string, options?: Partial<ParseOptions>): CodeCell[] {
     const opts: ParseOptions = { ...DEFAULT_PARSE_OPTIONS, ...options };
-    const lines = this.getLines(document, opts.maxLines);
-    const language = document.languageId;
-
-    // Collect split points
     const splitPoints = this.computeSplitPoints(lines, opts);
-
-    // Build cells from split points
     const cells = this.buildCells(lines, splitPoints, language);
-
-    // Classify cell types
     this.classifyCells(cells, lines);
-
     return cells;
   }
 

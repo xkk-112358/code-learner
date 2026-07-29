@@ -1,6 +1,10 @@
 /**
  * Streaming helpers for SSE (Server-Sent Events) parsing.
  * Uses Node.js https module (VS Code extension host doesn't have global fetch).
+ *
+ * Note: openai-provider.ts and claude-provider.ts use `parseSSEStream` for
+ * streaming responses. nb-generator.ts uses `nodeRequestAndRead` for
+ * non-streaming requests. All HTTP calls in the project route through here.
  */
 
 import * as https from 'https';
@@ -40,7 +44,6 @@ export function nodeRequest(
     };
 
     const req = mod.request(reqOptions, (res) => {
-      const chunks: Buffer[] = [];
       const headers: Record<string, string> = {};
       for (const [key, val] of Object.entries(res.headers)) {
         if (val !== undefined) {
@@ -124,4 +127,35 @@ export async function* parseSSEStream(
       yield remaining;
     }
   }
+}
+
+/**
+ * Read an entire Node.js readable stream into a string.
+ * Used for reading error bodies and by nb-generator.ts for non-streaming calls.
+ */
+export function readStreamToString(stream: NodeJS.ReadableStream): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+    stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+    stream.on('error', reject);
+  });
+}
+
+/**
+ * Convenience wrapper: make a request and read the full response body as a string.
+ * Used by nb-generator.ts for non-streaming AI calls.
+ */
+export async function nodeRequestAndRead(
+  url: string,
+  options: {
+    method?: string;
+    headers?: Record<string, string>;
+    body?: string;
+    signal?: AbortSignal;
+  } = {}
+): Promise<{ statusCode: number; body: string }> {
+  const response = await nodeRequest(url, options);
+  const body = await readStreamToString(response.body);
+  return { statusCode: response.statusCode, body };
 }

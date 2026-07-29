@@ -13,7 +13,7 @@ export class GoParser extends BaseParser {
     return {
       functionDef: /^func\s+(\w+\s*)?\(/,
       classDef: /^type\s+\w+\s+(struct|interface)\s*(\{|$)/,
-      importDef: /^import\s+(\"|\(|\w+)/,
+      importDef: /^import\s+("|\(|\w+)/,
     };
   }
 

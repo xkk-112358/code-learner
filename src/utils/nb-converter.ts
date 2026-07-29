@@ -194,6 +194,11 @@ function getLanguageInfo(language: string): LanguageInfo {
 
 // ── Type Definitions ─────────────────────────────────────
 
+interface CodeMirrorMode {
+  name: string;
+  version: number;
+}
+
 interface IpynbNotebook {
   nbformat: number;
   nbformat_minor: number;
@@ -204,7 +209,8 @@ interface IpynbNotebook {
 interface NotebookMetadata {
   kernelspec?: KernelSpec;
   language_info?: LanguageInfo;
-  [key: string]: any;
+  codeLearner?: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 interface KernelSpec {
@@ -218,14 +224,21 @@ interface LanguageInfo {
   version?: string;
   mimetype?: string;
   file_extension?: string;
-  codemirror_mode?: any;
+  codemirror_mode?: CodeMirrorMode;
   nbconvert_exporter?: string;
+}
+
+interface NotebookCellOutput {
+  output_type: string;
+  text?: string[];
+  data?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
 }
 
 interface NotebookCell {
   cell_type: 'code' | 'markdown' | 'raw';
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   source: string[];
   execution_count?: number | null;
-  outputs?: any[];
+  outputs?: NotebookCellOutput[];
 }

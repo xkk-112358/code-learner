@@ -3,10 +3,16 @@
  */
 
 import * as vscode from 'vscode';
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import * as path from 'path';
+import { storageKey } from '../utils/helpers';
 
 export interface QAPair { id: string; question: string; answer: string }
+
+export interface ExplanationTiming {
+  elapsed: number;  // milliseconds
+  chars: number;    // character count of explanation
+}
 
 interface AIExplanation {
   fingerprint: string;
@@ -18,11 +24,13 @@ interface AIExplanation {
   // Original position for 💡 placement (persisted)
   posLine: number;
   posCol: number;
+  timing?: ExplanationTiming;
 }
 
 interface PersistedExp {
   fingerprint: string; codeSnippet: string; explanation: string;
   anchorText: string; qas: QAPair[]; posLine: number; posCol: number;
+  timing?: ExplanationTiming;
 }
 
 let pairIdCounter = 0;
@@ -30,18 +38,6 @@ function genPairId(): string { return 'qa_' + (++pairIdCounter); }
 
 function makeFP(text: string): string {
   return text.split('\n')[0]?.trim().replace(/\s+/g, '').slice(0, 60).toLowerCase() || '';
-}
-
-function normalizePath(p: string): string {
-  if (process.platform === 'win32') return p.replace(/\//g, '\\').replace(/\\$/, '');
-  return p.replace(/\/$/, '');
-}
-
-function getStorageKey(uri: vscode.Uri): string {
-  if (uri.scheme === 'file') return uri.fsPath;
-  const decoded = decodeURIComponent(uri.path);
-  let p = decoded.replace(/^\/([a-zA-Z]:\/)/, '$1').replace(/^\/([a-zA-Z]:)/, '$1');
-  return normalizePath(p);
 }
 
 // ── Persisted file pairings ──────────────────────────────
@@ -57,15 +53,18 @@ export function registerFilePair(fileA: string, fileB: string): void {
   pairsChanged = true;
 }
 
+/**
+ * Get files paired with the given path (e.g., .py ↔ .ipynb).
+ * No longer uses fs.accessSync — paired paths are returned as-is;
+ * callers gracefully handle lookups for non-existent files.
+ */
 export function getPairedPaths(filePath: string): string[] {
   const result = new Set<string>();
   if (filePath.endsWith('.py')) {
-    const nb = filePath.replace(/\.py$/, '.ipynb');
-    try { fs.accessSync(nb); result.add(nb); } catch { /* no op */ }
+    result.add(filePath.replace(/\.py$/, '.ipynb'));
   }
   if (filePath.endsWith('.ipynb')) {
-    const py = filePath.replace(/\.ipynb$/, '.py');
-    try { fs.accessSync(py); result.add(py); } catch { /* no op */ }
+    result.add(filePath.replace(/\.ipynb$/, '.py'));
   }
   const explicit = filePairs.get(filePath);
   if (explicit) explicit.forEach(p => result.add(p));
@@ -73,22 +72,25 @@ export function getPairedPaths(filePath: string): string[] {
 }
 
 // ── Persistence ──────────────────────────────────────────
-let storagePath = '';
+let _storagePath = '';
 
-export function setStoragePath(p: string): void { storagePath = p; }
+export function setStoragePath(p: string): void { _storagePath = p; }
 
 function getSavePath(): string {
-  if (!storagePath) return '';
-  return path.join(storagePath, 'code-learner-data.json');
+  if (!_storagePath) return '';
+  return path.join(_storagePath, 'code-learner-data.json');
 }
 
-export function loadPersistedData(): { data: Map<string, AIExplanation[]>; pairs: Map<string, Set<string>> } {
+async function loadPersistedDataAsync(): Promise<{
+  data: Map<string, AIExplanation[]>;
+  pairs: Map<string, Set<string>>;
+}> {
   const dataMap = new Map<string, AIExplanation[]>();
   const pairMap = new Map<string, Set<string>>();
   const savePath = getSavePath();
   if (!savePath) return { data: dataMap, pairs: pairMap };
   try {
-    const raw = fs.readFileSync(savePath, 'utf-8');
+    const raw = await fs.readFile(savePath, 'utf-8');
     const saved = JSON.parse(raw);
     for (const entry of saved.explanations || []) {
       const exps: AIExplanation[] = (entry.exps || []).map((e: PersistedExp) => ({
@@ -105,7 +107,9 @@ export function loadPersistedData(): { data: Map<string, AIExplanation[]>; pairs
       };
       add(a, b); add(b, a);
     }
-  } catch { /* no saved data */ }
+  } catch {
+    // No saved data or first run
+  }
   return { data: dataMap, pairs: pairMap };
 }
 
@@ -114,36 +118,56 @@ export class CodeLearnerCodeLensProvider implements vscode.CodeLensProvider {
   readonly onDidChangeCodeLenses = this._onDidChange.event;
   private data = new Map<string, AIExplanation[]>();
   private decoMap = new Map<string, { deco: vscode.TextEditorDecorationType; anchor: string; posLine: number; posCol: number }>();
+  /**
+   * Soft-deleted explanations whose code lines have been removed.
+   * Kept here so they can be restored if the user undoes the deletion.
+   * Keyed by filePath.
+   */
+  private deletedExplanations = new Map<string, AIExplanation[]>();
 
+  /**
+   * Lightweight constructor — does no I/O.
+   * Call await init() after construction to load persisted data.
+   */
   constructor() {
-    const saved = loadPersistedData();
-    this.data = saved.data;
+    // Empty data/decoMap initialized above; data loaded asynchronously in init()
+  }
 
-    // Restore filePairs
-    for (const [from, toSet] of saved.pairs) {
-      for (const to of toSet) {
-        const add = (a: string, b: string) => {
-          if (!filePairs.has(a)) filePairs.set(a, new Set());
-          filePairs.get(a)!.add(b);
-        };
-        add(from, to); add(to, from);
+  /**
+   * Load persisted explanations and rebuild decoration state.
+   * Must be called once after construction, before the provider is registered.
+   */
+  async init(): Promise<void> {
+    const saved = await loadPersistedDataAsync();
+    if (saved.data.size > 0 || saved.pairs.size > 0) {
+      this.data = saved.data;
+
+      // Restore filePairs
+      for (const [from, toSet] of saved.pairs) {
+        for (const to of toSet) {
+          const add = (a: string, b: string) => {
+            if (!filePairs.has(a)) filePairs.set(a, new Set());
+            filePairs.get(a)!.add(b);
+          };
+          add(from, to); add(to, from);
+        }
       }
-    }
 
-    // Rebuild decoration types from loaded data
-    for (const [filePath, exps] of this.data) {
-      for (const exp of exps) {
-        this.addDeco(filePath, exp.posLine, exp.posCol, exp.tagKey, exp.anchorText);
+      // Rebuild decoration types from loaded data
+      for (const [filePath, exps] of this.data) {
+        for (const exp of exps) {
+          this.addDeco(filePath, exp.posLine, exp.posCol, exp.tagKey, exp.anchorText);
+        }
       }
     }
   }
 
-  private save(): void {
+  private async save(): Promise<void> {
     const savePath = getSavePath();
     if (!savePath) return;
     try {
       const dir = path.dirname(savePath);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      await fs.mkdir(dir, { recursive: true }).catch(() => { /* dir exists */ });
       const entries: { filePath: string; exps: PersistedExp[] }[] = [];
       for (const [filePath, exps] of this.data) {
         entries.push({
@@ -152,6 +176,7 @@ export class CodeLearnerCodeLensProvider implements vscode.CodeLensProvider {
             fingerprint: e.fingerprint, codeSnippet: e.codeSnippet,
             explanation: e.explanation, anchorText: e.anchorText,
             qas: e.qas, posLine: e.posLine, posCol: e.posCol,
+            timing: e.timing,
           })),
         });
       }
@@ -163,22 +188,22 @@ export class CodeLearnerCodeLensProvider implements vscode.CodeLensProvider {
           if (!seen.has(key)) { seen.add(key); pairs.push([from, to]); }
         }
       }
-      fs.writeFileSync(savePath, JSON.stringify({ version: 1, explanations: entries, pairs }, null, 2), 'utf-8');
-    } catch (e: any) { console.error('[Code Learner] Save failed:', e?.message); }
+      await fs.writeFile(savePath, JSON.stringify({ version: 1, explanations: entries, pairs }, null, 2), 'utf-8');
+    } catch (e: unknown) { console.error('[Code Learner] Save failed:', e instanceof Error ? e.message : String(e)); }
   }
 
   refresh(): void { this._onDidChange.fire(); }
 
-  addExplanation(filePath: string, range: vscode.Range, explanation: string, anchorText?: string, codeSnippet?: string): void {
-    this._store(filePath, range, explanation, anchorText, codeSnippet);
+  async addExplanation(filePath: string, range: vscode.Range, explanation: string, anchorText?: string, codeSnippet?: string, timing?: ExplanationTiming): Promise<void> {
+    this._store(filePath, range, explanation, anchorText, codeSnippet, timing);
     for (const paired of getPairedPaths(filePath)) {
-      if (paired !== filePath) this._store(paired, range, explanation, anchorText, codeSnippet);
+      if (paired !== filePath) this._store(paired, range, explanation, anchorText, codeSnippet, timing);
     }
-    this.save();
-    if (pairsChanged) { pairsChanged = false; this.save(); }
+    await this.save();
+    if (pairsChanged) { pairsChanged = false; await this.save(); }
   }
 
-  private _store(filePath: string, range: vscode.Range, explanation: string, anchorText?: string, codeSnippet?: string): void {
+  private _store(filePath: string, range: vscode.Range, explanation: string, anchorText?: string, codeSnippet?: string, timing?: ExplanationTiming): void {
     if (!this.data.has(filePath)) this.data.set(filePath, []);
     const list = this.data.get(filePath)!;
     const fp = makeFP(codeSnippet || '');
@@ -191,6 +216,7 @@ export class CodeLearnerCodeLensProvider implements vscode.CodeLensProvider {
       fingerprint: fp, codeSnippet: codeSnippet || '', explanation,
       tagKey, anchorText: anchor, qas: [],
       posLine: range.end.line, posCol: range.end.character,
+      timing,
     });
     this.data.set(filePath, toKeep);
     this.addDeco(filePath, range.end.line, range.end.character, tagKey, anchor);
@@ -201,7 +227,7 @@ export class CodeLearnerCodeLensProvider implements vscode.CodeLensProvider {
     if (this.decoMap.has(tagKey)) {
       const entry = this.decoMap.get(tagKey)!;
       for (const ed of vscode.window.visibleTextEditors) {
-        if (getStorageKey(ed.document.uri) === filePath) {
+        if (storageKey(ed.document.uri) === filePath) {
           this.applyDecoAt(ed, entry.deco, anchor, line, col);
         }
       }
@@ -212,7 +238,7 @@ export class CodeLearnerCodeLensProvider implements vscode.CodeLensProvider {
     });
     this.decoMap.set(tagKey, { deco, anchor, posLine: line, posCol: col });
     for (const ed of vscode.window.visibleTextEditors) {
-      if (getStorageKey(ed.document.uri) === filePath) {
+      if (storageKey(ed.document.uri) === filePath) {
         this.applyDecoAt(ed, deco, anchor, line, col);
       }
     }
@@ -242,7 +268,7 @@ export class CodeLearnerCodeLensProvider implements vscode.CodeLensProvider {
   }
 
   applyAllDecorations(editor: vscode.TextEditor): void {
-    const edPath = getStorageKey(editor.document.uri);
+    const edPath = storageKey(editor.document.uri);
     for (const [tagKey, entry] of this.decoMap) {
       if (tagKey.startsWith(edPath + '::')) {
         this.applyDecoAt(editor, entry.deco, entry.anchor, entry.posLine, entry.posCol);
@@ -256,7 +282,7 @@ export class CodeLearnerCodeLensProvider implements vscode.CodeLensProvider {
   }
 
   getExplanation(uri: vscode.Uri, _line: number, lineText?: string): AIExplanation | undefined {
-    const key = getStorageKey(uri);
+    const key = storageKey(uri);
     // 1) Try exact file + paired files with content matching
     for (const checkKey of [key, ...getPairedPaths(key)]) {
       const list = this.data.get(checkKey);
@@ -274,25 +300,42 @@ export class CodeLearnerCodeLensProvider implements vscode.CodeLensProvider {
     return undefined;
   }
 
-  appendQuestion(uri: vscode.Uri, line: number, q: string, a: string): QAPair | undefined {
+  async appendQuestion(uri: vscode.Uri, line: number, q: string, a: string): Promise<QAPair | undefined> {
     const exp = this.getExplanation(uri, line);
     if (!exp) return undefined;
     const pair: QAPair = { id: genPairId(), question: q, answer: a };
-    exp.qas.push(pair); this.refresh(); this.save(); return pair;
+    exp.qas.push(pair); this.refresh(); await this.save(); return pair;
   }
 
-  removeQAPair(uri: vscode.Uri, line: number, id: string): void {
+  async removeQAPair(uri: vscode.Uri, line: number, id: string): Promise<void> {
     const exp = this.getExplanation(uri, line);
     if (!exp) return;
-    exp.qas = exp.qas.filter(q => q.id !== id); this.refresh(); this.save();
+    exp.qas = exp.qas.filter(q => q.id !== id); this.refresh(); await this.save();
   }
 
-  removeExplanation(filePath: string, _line: number): void {
+  async removeExplanation(filePath: string, line: number, fingerprint?: string): Promise<void> {
     for (const fp of [filePath, ...getPairedPaths(filePath)]) {
       const list = this.data.get(fp);
-      if (list) { for (const e of list) this.removeDeco(e.tagKey); this.data.delete(fp); }
+      if (!list) continue;
+      if (fingerprint) {
+        // Hover delete: match by fingerprint
+        const toRemove = list.filter(e => e.fingerprint === fingerprint);
+        for (const e of toRemove) this.removeDeco(e.tagKey);
+        const remaining = list.filter(e => e.fingerprint !== fingerprint);
+        if (remaining.length > 0) this.data.set(fp, remaining); else this.data.delete(fp);
+      } else if (line > 0) {
+        // Fallback: match by posLine
+        const toRemove = list.filter(e => e.posLine === line);
+        for (const e of toRemove) this.removeDeco(e.tagKey);
+        const remaining = list.filter(e => e.posLine !== line);
+        if (remaining.length > 0) this.data.set(fp, remaining); else this.data.delete(fp);
+      } else {
+        // line=0, no fingerprint = delete all (right-click "全部删除")
+        for (const e of list) this.removeDeco(e.tagKey);
+        this.data.delete(fp);
+      }
     }
-    this.refresh(); this.save();
+    this.refresh(); await this.save();
   }
 
   getAllExplanations(filePath: string): { snippet: string; explanation: string }[] {
@@ -315,13 +358,13 @@ export class CodeLearnerCodeLensProvider implements vscode.CodeLensProvider {
     return result;
   }
 
-  copyExplanations(sourcePath: string, targetPath: string): void {
+  async copyExplanations(sourcePath: string, targetPath: string): Promise<void> {
     const src = this.data.get(sourcePath);
     if (!src || src.length === 0) return;
     const copies: AIExplanation[] = src.map(e => ({ ...e, tagKey: e.tagKey.replace(sourcePath, targetPath) }));
     this.data.set(targetPath, copies);
     for (const exp of copies) this.addDeco(targetPath, exp.posLine, exp.posCol, exp.tagKey, exp.anchorText);
-    this.save();
+    await this.save();
   }
 
   provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
@@ -331,8 +374,71 @@ export class CodeLearnerCodeLensProvider implements vscode.CodeLensProvider {
     )];
   }
 
-  dispose(): void {
-    this.save();
+  /**
+   * Sync explanations with document content: hide explanations whose code
+   * has been deleted, and restore them if the code comes back (undo).
+   *
+   * Called from the onDidChangeTextDocument handler in register.ts.
+   * The 💡 decoration system already hides/shows based on anchor text
+   * visibility; this additionally keeps a "deleted" cache so that
+   * explanations survive a delete→undo round-trip in storage.
+   */
+  syncExplanationsWithDocument(document: vscode.TextDocument): void {
+    const filePath = document.uri.scheme === 'file' ? document.uri.fsPath : document.uri.toString();
+    const fullText = document.getText();
+
+    // Check active explanations
+    const active = this.data.get(filePath);
+    if (active && active.length > 0) {
+      const stillValid: AIExplanation[] = [];
+      const orphaned: AIExplanation[] = [];
+      for (const exp of active) {
+        if (fullText.includes(exp.anchorText)) {
+          stillValid.push(exp);
+        } else {
+          orphaned.push(exp);
+          this.removeDeco(exp.tagKey);
+        }
+      }
+      if (orphaned.length > 0) {
+        this.data.set(filePath, stillValid);
+        const existing = this.deletedExplanations.get(filePath) || [];
+        this.deletedExplanations.set(filePath, [...existing, ...orphaned]);
+        this.refresh();
+      }
+    }
+
+    // Check deleted explanations for possible restore (undo)
+    const deleted = this.deletedExplanations.get(filePath);
+    if (deleted && deleted.length > 0) {
+      const stillDeleted: AIExplanation[] = [];
+      const restored: AIExplanation[] = [];
+      for (const exp of deleted) {
+        if (fullText.includes(exp.anchorText)) {
+          restored.push(exp);
+        } else {
+          stillDeleted.push(exp);
+        }
+      }
+      if (restored.length > 0) {
+        if (!this.data.has(filePath)) this.data.set(filePath, []);
+        const list = this.data.get(filePath)!;
+        for (const exp of restored) {
+          list.push(exp);
+          this.addDeco(filePath, exp.posLine, exp.posCol, exp.tagKey, exp.anchorText);
+        }
+        if (stillDeleted.length > 0) {
+          this.deletedExplanations.set(filePath, stillDeleted);
+        } else {
+          this.deletedExplanations.delete(filePath);
+        }
+        this.refresh();
+      }
+    }
+  }
+
+  async dispose(): Promise<void> {
+    await this.save();
     for (const { deco } of this.decoMap.values()) deco.dispose();
     this.decoMap.clear();
   }

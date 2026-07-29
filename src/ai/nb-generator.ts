@@ -5,6 +5,7 @@
 
 import * as vscode from 'vscode';
 import { CodeLearnerSettings } from '../config/settings';
+import { nodeRequestAndRead } from './streaming';
 
 export interface ConversionResult {
   /** The .ipynb JSON content as a string */
@@ -13,13 +14,28 @@ export interface ConversionResult {
   rawResponse: string;
 }
 
-/**
- * Use AI to convert a code file into a well-structured Jupyter notebook.
- * The AI is prompted to split the code into logical cells and add explanatory markdown cells.
- */
 export interface StoredExplanation {
   snippet: string;
   explanation: string;
+}
+
+/** Minimal interface for cells parsed from AI JSON response. */
+interface RawCell {
+  type?: string;
+  source?: string | string[];
+}
+
+interface KernelSpecInfo {
+  display_name: string;
+  language: string;
+  name: string;
+}
+
+interface LanguageInfo {
+  name: string;
+  version?: string;
+  mimetype?: string;
+  file_extension?: string;
 }
 
 export async function generateNotebook(
@@ -50,7 +66,9 @@ function buildNotebookPrompt(source: string, language: string, fileName: string)
     ? source.slice(0, maxChars) + '\n\n... (file truncated)'
     : source;
 
-  return `Convert this ${language} code file into a Jupyter notebook (.ipynb).
+  return `Convert this ${language} code file into a code-only Jupyter notebook (.ipynb).
+The result is a skeleton notebook that preserves the code structure — the user will
+add explanations later. No markdown cells are needed.
 
 The file is: ${fileName}
 
@@ -59,12 +77,11 @@ Code:
 ${truncatedSource}
 \`\`\`
 
-Please create a notebook where:
-1. Split the code into LOGICAL cells - each function, class, or logical block gets its own code cell
-2. Keep the code exactly as-is in code cells (preserve all comments and formatting)
+Rules:
+1. Split the code into LOGICAL code cells — each function, class, or logical block gets its own cell
+2. Keep the code exactly as-is (preserve all comments and formatting)
 3. Group related import statements together in a single cell
-4. DO NOT add any extra markdown cells or commentary - only code cells
-5. DO NOT add a title or intro cell
+4. Output ONLY code cells — no markdown cells, no title cell, no commentary
 
 Respond ONLY with valid JSON in this exact format (no markdown, no \`\`\`json):
 {"cells": [
@@ -75,24 +92,6 @@ Do not include any text before or after the JSON.`;
 }
 
 async function callAiForNotebook(prompt: string, settings: CodeLearnerSettings): Promise<string> {
-  // We create a synthetic cell and context to reuse the existing AI infrastructure
-  const cell = {
-    index: 0,
-    type: 'code' as const,
-    startLine: 0,
-    endLine: 0,
-    source: '',
-    marker: 'auto-section' as any,
-    language: 'python',
-  };
-
-  // Build a request context
-  const context = {
-    filePath: 'notebook-conversion',
-    language: 'python',
-    fullSource: prompt,
-  };
-
   const config = settings.getConfig();
   const apiKey = await settings.getApiKey(config.provider);
 
@@ -100,20 +99,20 @@ async function callAiForNotebook(prompt: string, settings: CodeLearnerSettings):
     throw new Error('API key not configured. Run "Code Learner: Configure AI Provider" first.');
   }
 
-  let accumulated = '';
-
   if (config.provider === 'openai') {
-    accumulated = await callOpenAI(apiKey, config, prompt);
+    return callOpenAI(apiKey, config, prompt);
   } else {
-    accumulated = await callClaude(apiKey, config, prompt);
+    return callClaude(apiKey, config, prompt);
   }
-
-  return accumulated;
 }
 
-async function callOpenAI(apiKey: string, config: any, prompt: string): Promise<string> {
-  const https = require('https');
-  const urlObj = new URL(config.openaiEndpoint.replace(/\/$/, '') + '/chat/completions');
+async function callOpenAI(
+  apiKey: string,
+  config: import('../config/settings').CodeLearnerConfig,
+  prompt: string
+): Promise<string> {
+  const endpoint = config.openaiEndpoint.replace(/\/$/, '');
+  const url = `${endpoint}/chat/completions`;
 
   const body = JSON.stringify({
     model: config.openaiModel,
@@ -126,40 +125,37 @@ async function callOpenAI(apiKey: string, config: any, prompt: string): Promise<
     ],
   });
 
-  return new Promise((resolve, reject) => {
-    const req = https.request({
-      hostname: urlObj.hostname,
-      port: urlObj.port || 443,
-      path: urlObj.pathname + urlObj.search,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + apiKey,
-      },
-      timeout: 120000,
-    }, (res: any) => {
-      let data = '';
-      res.on('data', (chunk: Buffer) => data += chunk.toString());
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(data);
-          const content = parsed.choices?.[0]?.message?.content || '';
-          resolve(content);
-        } catch (e: any) {
-          reject(new Error('Failed to parse OpenAI response: ' + e.message));
-        }
-      });
-    });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
-    req.write(body);
-    req.end();
+  const response = await nodeRequestAndRead(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + apiKey,
+    },
+    body,
   });
+
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    let errorMessage = `OpenAI API error (${response.statusCode})`;
+    try {
+      const parsed = JSON.parse(response.body);
+      errorMessage = parsed.error?.message || errorMessage;
+    } catch {
+      errorMessage = response.body || errorMessage;
+    }
+    throw new Error(errorMessage);
+  }
+
+  const parsed = JSON.parse(response.body);
+  return parsed.choices?.[0]?.message?.content || '';
 }
 
-async function callClaude(apiKey: string, config: any, prompt: string): Promise<string> {
-  const https = require('https');
-  const urlObj = new URL(config.claudeEndpoint.replace(/\/$/, '') + '/v1/messages');
+async function callClaude(
+  apiKey: string,
+  config: import('../config/settings').CodeLearnerConfig,
+  prompt: string
+): Promise<string> {
+  const endpoint = config.claudeEndpoint.replace(/\/$/, '');
+  const url = `${endpoint}/v1/messages`;
 
   const body = JSON.stringify({
     model: config.claudeModel,
@@ -169,36 +165,29 @@ async function callClaude(apiKey: string, config: any, prompt: string): Promise<
     messages: [{ role: 'user', content: prompt }],
   });
 
-  return new Promise((resolve, reject) => {
-    const req = https.request({
-      hostname: urlObj.hostname,
-      port: urlObj.port || 443,
-      path: urlObj.pathname + urlObj.search,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      timeout: 120000,
-    }, (res: any) => {
-      let data = '';
-      res.on('data', (chunk: Buffer) => data += chunk.toString());
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(data);
-          const content = parsed.content?.[0]?.text || '';
-          resolve(content);
-        } catch (e: any) {
-          reject(new Error('Failed to parse Claude response: ' + e.message));
-        }
-      });
-    });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
-    req.write(body);
-    req.end();
+  const response = await nodeRequestAndRead(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body,
   });
+
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    let errorMessage = `Claude API error (${response.statusCode})`;
+    try {
+      const parsed = JSON.parse(response.body);
+      errorMessage = parsed.error?.message || errorMessage;
+    } catch {
+      errorMessage = response.body || errorMessage;
+    }
+    throw new Error(errorMessage);
+  }
+
+  const parsed = JSON.parse(response.body);
+  return parsed.content?.[0]?.text || '';
 }
 
 function parseResponseToNotebook(
@@ -222,7 +211,7 @@ function parseResponseToNotebook(
     jsonStr = jsonMatch[0];
   }
 
-  let cells: any[];
+  let cells: RawCell[];
   try {
     const parsed = JSON.parse(jsonStr);
     cells = parsed.cells || [];
@@ -232,7 +221,7 @@ function parseResponseToNotebook(
   }
 
   // Validate and clean up cells
-  const validatedCells = cells.map((cell: any, i: number) => {
+  const validatedCells = cells.map((cell: RawCell, i: number) => {
     let rawSource = Array.isArray(cell.source) ? cell.source.join('') : String(cell.source || '');
     // Trim leading/trailing blank lines from each cell
     rawSource = rawSource.replace(/^\n+|\n+$/g, '');
@@ -245,7 +234,7 @@ function parseResponseToNotebook(
 
     if (cellType === 'code') {
       return {
-        cell_type: 'code',
+        cell_type: 'code' as const,
         metadata: { codeLearner: { index: i } },
         execution_count: null,
         source: source,
@@ -253,7 +242,7 @@ function parseResponseToNotebook(
       };
     } else {
       return {
-        cell_type: 'markdown',
+        cell_type: 'markdown' as const,
         metadata: {},
         source: source,
       };
@@ -261,7 +250,7 @@ function parseResponseToNotebook(
   });
 
   // Build the notebook JSON
-  const notebook = {
+  const notebook: Record<string, unknown> = {
     nbformat: 4,
     nbformat_minor: 5,
     metadata: {
@@ -281,10 +270,10 @@ function parseResponseToNotebook(
   return JSON.stringify(notebook, null, 2);
 }
 
-function createFallbackCells(source: string, language: string, fileName: string): any[] {
+function createFallbackCells(source: string, _language: string, _fileName: string): RawCell[] {
   // Simple fallback: split by double newlines
   const blocks = source.split(/\n\n+/);
-  const cells: any[] = [];
+  const cells: RawCell[] = [];
 
   for (const block of blocks) {
     if (block.trim()) {
@@ -298,8 +287,8 @@ function createFallbackCells(source: string, language: string, fileName: string)
   return cells;
 }
 
-function getKernelSpec(language: string): any {
-  const map: Record<string, any> = {
+function getKernelSpec(language: string): KernelSpecInfo {
+  const map: Record<string, KernelSpecInfo> = {
     python: { display_name: 'Python 3', language: 'python', name: 'python3' },
     javascript: { display_name: 'Node.js', language: 'javascript', name: 'nodejs' },
     typescript: { display_name: 'TypeScript', language: 'typescript', name: 'typescript' },
@@ -316,8 +305,8 @@ function getKernelSpec(language: string): any {
   return map[language] || { display_name: language, language, name: language };
 }
 
-function getLanguageInfo(language: string): any {
-  const map: Record<string, any> = {
+function getLanguageInfo(language: string): LanguageInfo {
+  const map: Record<string, LanguageInfo> = {
     python: { name: 'python', version: '3.x', mimetype: 'text/x-python', file_extension: '.py' },
     javascript: { name: 'javascript', version: 'ES2022', mimetype: 'text/javascript', file_extension: '.js' },
     typescript: { name: 'typescript', version: '5.x', mimetype: 'text/typescript', file_extension: '.ts' },

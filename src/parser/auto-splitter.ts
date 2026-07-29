@@ -55,7 +55,7 @@ export const STRUCTURAL_PATTERNS: Record<string, StructuralPatterns> = {
   go: {
     functionDef: /^func\s+\w+/,
     classDef: /^type\s+\w+\s+(struct|interface)\s*\{/,
-    importDef: /^import\s+(\"|\(|$)/,
+    importDef: /^import\s+("|\(|$)/,
   },
   rust: {
     functionDef: /^(pub\s+)?(unsafe\s+)?fn\s+\w+/,

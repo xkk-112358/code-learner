@@ -5,6 +5,7 @@
 
 import * as vscode from 'vscode';
 import { CodeLearnerCodeLensProvider } from './codelens-provider';
+import { t } from '../utils/helpers';
 
 export class AIHoverProvider implements vscode.HoverProvider {
   private codelens: CodeLearnerCodeLensProvider;
@@ -24,33 +25,39 @@ export class AIHoverProvider implements vscode.HoverProvider {
     const decoPos = anchorIdx + info.anchorText.length;
     if (position.character < decoPos) return null;
 
-    const isZh = vscode.env.language.startsWith('zh');
     const md = new vscode.MarkdownString('', true);
     md.isTrusted = true;
 
-    md.appendMarkdown(`--- 💡 ${isZh ? 'AI 解析' : 'AI Analysis'} ---\n\n`);
+    md.appendMarkdown(`--- 💡 ${t('AI 解析', 'AI Analysis')} ---`);
+    if (info.timing) {
+      const sec = (info.timing.elapsed / 1000).toFixed(1);
+      const tokens = Math.round(info.timing.chars / 4);
+      md.appendMarkdown(`(⏱ ${sec}s ·${tokens} tokens)`);
+    }
+    md.appendMarkdown('\n\n');
     md.appendMarkdown(info.explanation + '\n');
 
     const fileUri = document.uri;
     for (const qa of info.qas) {
       md.appendMarkdown('\n\n---\n');
-      md.appendMarkdown(`**💬 ${isZh ? 'Q' : 'Q'}:** ${qa.question}\n\n`);
-      md.appendMarkdown(`**🤖 ${isZh ? 'A' : 'A'}:** ${qa.answer}\n\n`);
+      md.appendMarkdown(`**💬 Q:** ${qa.question}\n\n`);
+      md.appendMarkdown(`**🤖 A:** ${qa.answer}\n\n`);
       const copyCmd = `command:code-learner.copyQA?${encodeURIComponent(JSON.stringify([qa.question, qa.answer]))}`;
       const delCmd = `command:code-learner.deleteQA?${encodeURIComponent(JSON.stringify([fileUri, position.line, qa.id]))}`;
-      md.appendMarkdown(`[${isZh ? '复制' : 'Copy'}](${copyCmd})　[🗑 ${isZh ? '删除' : 'Delete'}](${delCmd})`);
+      md.appendMarkdown(`[${t('复制', 'Copy')}](${copyCmd})  [🗑 ${t('删除', 'Delete')}](${delCmd})`);
     }
 
     md.appendMarkdown('\n\n---\n');
     const reCmd = `command:code-learner.reExplain?${encodeURIComponent(JSON.stringify([fileUri, position.line, 0]))}`;
     const delCmd = `command:code-learner.deleteExplanation?${encodeURIComponent(JSON.stringify([fileUri, position.line]))}`;
     const askCmd = `command:code-learner.askQuestion?${encodeURIComponent(JSON.stringify([fileUri, position.line, 0]))}`;
+    const copyCmdExp = `command:code-learner.copyExplanation?${encodeURIComponent(JSON.stringify([fileUri, position.line]))}`;
     const cmtCmd = `command:code-learner.toComment?${encodeURIComponent(JSON.stringify([fileUri, position.line]))}`;
     md.appendMarkdown(
-      `[🔄 ${isZh ? '重新解释' : 'Re-explain'}](${reCmd})　` +
-      `[🗑 ${isZh ? '删除全部' : 'Delete All'}](${delCmd})　` +
-      `[💬 ${isZh ? '提问' : 'Ask'}](${askCmd})　` +
-      `[💭 ${isZh ? '转为注释' : 'To Comment'}](${cmtCmd})`
+      `[📋 ${t('复制', 'Copy')}](${copyCmdExp})  [🔄 ${t('重新解释', 'Re-explain')}](${reCmd})  ` +
+      `[🗑 ${t('删除', 'Delete')}](${delCmd})  ` +
+      `[💬 ${t('提问', 'Ask')}](${askCmd})  ` +
+      `[💭 ${t('转为注释', 'To Comment')}](${cmtCmd})`
     );
 
     return new vscode.Hover(md);

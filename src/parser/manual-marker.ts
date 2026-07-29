@@ -85,7 +85,7 @@ export const MANUAL_MARKER_CONFIGS: Record<string, ManualMarkerConfig> = {
  */
 export const FALLBACK_MARKER_CONFIG: ManualMarkerConfig = {
   name: 'Generic',
-  patterns: [/^[#/\/]\s*%%\s*$/, /^[#/\/]\s*---\s*$/, /^[#/\/]\s*<region>\s*$/i],
+  patterns: [/^[#/]\s*%%\s*$/, /^[#/]\s*---\s*$/, /^[#/]\s*<region>\s*$/i],
   commentChars: ['#', '//'],
 };
 

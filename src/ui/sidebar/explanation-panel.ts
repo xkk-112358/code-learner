@@ -46,8 +46,10 @@ export class ExplanationPanel {
     this._panel.webview.postMessage({ type: 'stream-chunk', text: chunk });
   }
 
-  streamComplete(): void {
-    this._panel.webview.postMessage({ type: 'stream-end' });
+  streamComplete(elapsed?: number, chars?: number): void {
+    const msg: Record<string, unknown> = { type: 'stream-end' };
+    if (elapsed !== undefined) { msg.elapsed = elapsed; msg.chars = chars; }
+    this._panel.webview.postMessage(msg);
   }
 
   streamError(message: string): void {
@@ -58,7 +60,7 @@ export class ExplanationPanel {
     this._panel.webview.postMessage({ type: 'stream-start' });
   }
 
-  onDidReceiveMessage(listener: (message: any) => void): vscode.Disposable {
+  onDidReceiveMessage(listener: (message: unknown) => void): vscode.Disposable {
     return this._panel.webview.onDidReceiveMessage(listener);
   }
 
@@ -149,7 +151,8 @@ export class ExplanationPanel {
     html += 'return \'<div>\'+h+\'</div>\'}';
 
     // update display
-    html += 'function upd(){out.innerHTML=render(txt)+(done?\'\':\'<span class=\\\"cur\\\"></span>\')}';
+    // eslint-disable-next-line no-useless-escape
+    html += 'function upd(){out.innerHTML=render(txt)+(done?\'\':\'<span class=\\"cur\\"></span>\')}';
 
     // message handler
     html += 'window.addEventListener(\'message\',function(e){';
@@ -157,7 +160,10 @@ export class ExplanationPanel {
     html += 'switch(m.type){';
     html += 'case\'stream-start\':txt=\'\';done=false;st.style.display=\'flex\';out.innerHTML=\'\';break;';
     html += 'case\'stream-chunk\':st.style.display=\'none\';txt+=m.text;upd();break;';
-    html += 'case\'stream-end\':done=true;st.style.display=\'none\';upd();break;';
+    html += 'case\'stream-end\':done=true;st.style.display=\'none\';if(m.elapsed){var sec=(m.elapsed/1000).toFixed(1);var tokens=Math.round((m.chars||0)/4);header="⏱ "+sec+"s · "+tokens+"tok";}upd();break;';
+
+'}upd();break;';
+    // eslint-disable-next-line no-useless-escape
     html += 'case\'stream-error\':st.style.display=\'none\';out.innerHTML=\'<div class=\\\"err\\\">\'+esc(m.message)+\'</div>\';break;';
     html += '}';
     html += '});';
