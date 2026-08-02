@@ -21,7 +21,7 @@ export class ShellParser extends BaseParser {
     return /^\s*(function\s+)?\w+\s*\(\s*\)\s*\{?$/.test(line);
   }
 
-  protected isClassDef(line: string): boolean {
+  protected isClassDef(_line: string): boolean {
     return false;
   }
 }

@@ -32,7 +32,7 @@ export abstract class BaseParser {
     const opts: ParseOptions = { ...DEFAULT_PARSE_OPTIONS, ...options };
     const splitPoints = this.computeSplitPoints(lines, opts);
     const cells = this.buildCells(lines, splitPoints, language);
-    this.classifyCells(cells, lines);
+    this.classifyCells(cells);
     return cells;
   }
 
@@ -161,7 +161,7 @@ export abstract class BaseParser {
   /**
    * Classify each cell's type based on content
    */
-  private classifyCells(cells: CodeCell[], lines: string[]): void {
+  private classifyCells(cells: CodeCell[]): void {
     for (const cell of cells) {
       const firstLine = cell.source.split('\n')[0]?.trim() || '';
 

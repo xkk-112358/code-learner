@@ -10,11 +10,6 @@ export class CppParser extends BaseParser {
   readonly languageId = 'cpp';
   readonly languageName = 'C++';
 
-  // Also handle 'c' language
-  get languageIds(): string[] {
-    return ['cpp', 'c', 'cuda-cpp'];
-  }
-
   protected get structuralPatterns(): StructuralPatterns | undefined {
     return {
       functionDef: /^\s*\w[\w<>*&]+\s+\w+\s*\([^)]*\)\s*(\{|;|$)/,

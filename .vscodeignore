@@ -7,3 +7,9 @@ node_modules/**
 tsconfig.json
 **/*.ts
 **/*.map
+pictures/**
+PROJECT_DESCRIPTION.md
+.eslintrc.json
+.prettierrc
+vitest.config.ts
+package-lock.json

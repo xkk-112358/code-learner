@@ -37,7 +37,7 @@ export function hasExistingComment(explanation: string, linesBelow: string[]): b
   const fp = explanation.replace(/[#*`]/g, '').replace(/\s+/g, '').slice(0, 30).toLowerCase();
   if (!fp || fp.length < 10) return false;
   return linesBelow.some(l => {
-    const cleaned = l.replace(/^[#\s\/]+/, '').replace(/[`*]/g, '').replace(/\s+/g, '').toLowerCase();
+    const cleaned = l.replace(/^[#\s/]+/, '').replace(/[`*]/g, '').replace(/\s+/g, '').toLowerCase();
     return cleaned.includes(fp);
   });
 }
@@ -78,15 +78,24 @@ export function makeCodeFingerprint(snippet: string): string {
 
 /**
  * Try to find which line in docLines matches the given code fingerprint.
+ * With `hintLine`, the line where the explanation was recorded is checked
+ * first (then the scan continues forward), so duplicate lines elsewhere in
+ * the file don't hijack the match. Falls back to a full scan.
  * Returns the line index, or -1 if no match.
  */
-export function findMatchingLine(codeFP: string, docLines: string[]): number {
+export function findMatchingLine(codeFP: string, docLines: string[], hintLine?: number): number {
   if (!codeFP) return -1;
-  for (let l = 0; l < docLines.length; l++) {
+  const matchAt = (l: number): boolean => {
     const lf = docLines[l].trim().replace(/\s+/g, '').slice(0, 40).toLowerCase();
-    if (lf && (lf.includes(codeFP) || codeFP.includes(lf))) {
-      return l;
+    return !!lf && (lf.includes(codeFP) || codeFP.includes(lf));
+  };
+  if (hintLine !== undefined && hintLine >= 0 && hintLine < docLines.length) {
+    for (let l = hintLine; l < docLines.length; l++) {
+      if (matchAt(l)) return l;
     }
+  }
+  for (let l = 0; l < docLines.length; l++) {
+    if (matchAt(l)) return l;
   }
   return -1;
 }

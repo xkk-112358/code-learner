@@ -10,13 +10,59 @@ export class ExplanationPanel {
   public static currentPanel: ExplanationPanel | undefined;
   private readonly _panel: vscode.WebviewPanel;
   public readonly _disposables: vscode.Disposable[] = [];
+  private reExplainHandler: ((cellIndex: number) => void) | null = null;
+  /**
+   * Webview handshake: setting webview.html reloads the page asynchronously,
+   * and postMessage sent before the page's message listener is registered is
+   * silently dropped (which previously left the panel on the spinner forever
+   * when the explanation came from cache instantly). Messages are buffered
+   * until the webview signals {type:'ready'}.
+   */
+  private webviewReady = false;
+  private pendingMessages: Record<string, unknown>[] = [];
 
   private constructor(panel: vscode.WebviewPanel) {
     this._panel = panel;
     this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
+    this._panel.webview.onDidReceiveMessage((msg) => {
+      const m = msg as { type?: string; cellIndex?: number };
+      if (m.type === 'ready') {
+        this.webviewReady = true;
+        this.flushPending();
+      }
+      if (m.type === 're-explain') {
+        this.reExplainHandler?.(m.cellIndex ?? 0);
+      }
+    }, null, this._disposables);
   }
 
-  static createOrShow(extensionUri: vscode.Uri): ExplanationPanel {
+  /** Post a message to the webview, buffering until it is ready. */
+  private post(msg: Record<string, unknown>): void {
+    if (this.webviewReady) {
+      this._panel.webview.postMessage(msg);
+    } else {
+      this.pendingMessages.push(msg);
+    }
+  }
+
+  private flushPending(): void {
+    const msgs = this.pendingMessages;
+    this.pendingMessages = [];
+    for (const m of msgs) {
+      this._panel.webview.postMessage(m);
+    }
+  }
+
+  /**
+   * Set the handler for the panel's Re-explain button. The webview message
+   * listener lives in the constructor (registered once per panel — the panel
+   * is a reused singleton); this only swaps the callback.
+   */
+  setReExplainHandler(handler: (cellIndex: number) => void): void {
+    this.reExplainHandler = handler;
+  }
+
+  static createOrShow(_extensionUri: vscode.Uri): ExplanationPanel {
     const column = vscode.window.activeTextEditor
       ? vscode.window.activeTextEditor.viewColumn
       : undefined;
@@ -37,34 +83,37 @@ export class ExplanationPanel {
     return ExplanationPanel.currentPanel;
   }
 
-  showExplanation(cell: CodeCell, language: string): void {
+  showExplanation(cell: CodeCell, _language: string): void {
     this._panel.title = 'Code Learner - Cell ' + (cell.index + 1);
-    this._panel.webview.html = this.getHtml(cell, language);
+    // Setting html reloads the webview — the ready handshake resets.
+    this.webviewReady = false;
+    this.pendingMessages = [];
+    this._panel.webview.html = this.getHtml(cell, _language);
   }
 
   updateStream(chunk: string): void {
-    this._panel.webview.postMessage({ type: 'stream-chunk', text: chunk });
+    this.post({ type: 'stream-chunk', text: chunk });
   }
 
   streamComplete(elapsed?: number, chars?: number): void {
     const msg: Record<string, unknown> = { type: 'stream-end' };
     if (elapsed !== undefined) { msg.elapsed = elapsed; msg.chars = chars; }
-    this._panel.webview.postMessage(msg);
+    this.post(msg);
   }
 
   streamError(message: string): void {
-    this._panel.webview.postMessage({ type: 'stream-error', message });
+    this.post({ type: 'stream-error', message });
   }
 
   showLoading(): void {
-    this._panel.webview.postMessage({ type: 'stream-start' });
+    this.post({ type: 'stream-start' });
   }
 
   onDidReceiveMessage(listener: (message: unknown) => void): vscode.Disposable {
     return this._panel.webview.onDidReceiveMessage(listener);
   }
 
-  private getHtml(cell: CodeCell, language: string): string {
+  private getHtml(cell: CodeCell, _language: string): string {
     const src = cell.source
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -83,6 +132,9 @@ export class ExplanationPanel {
     // Build HTML by concatenating strings to avoid template backtick issues
     let html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">';
     html += '<meta name="viewport" content="width=device-width,initial-scale=1.0">';
+    // CSP: inline styles/scripts only, no external resources — AI-rendered
+    // content can't load remote assets or scripts.
+    html += '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; script-src \'unsafe-inline\'; img-src https: data:;">';
     html += '<title>Code Learner</title><style>';
     html += '*{margin:0;padding:0;box-sizing:border-box}';
     html += 'body{font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;';
@@ -126,47 +178,53 @@ export class ExplanationPanel {
     html += 'var txt=\'\',done=false;';
 
     // esc function
-    html += 'function esc(s){return s.replace(/&/g,\'&amp\').replace(/</g,\'&lt\').replace(/>/g,\'&gt\')}';
+    html += 'function esc(s){return s.replace(/&/g,\'&amp;\').replace(/</g,\'&lt;\').replace(/>/g,\'&gt;\')}';
 
     // render markdown function
     html += 'function render(t){';
-    html += 'var h=\'\',lines=t.split(\'\\n\'),inC=false,buf=\'\',i,l;';
+    html += 'var h=\'\',lines=t.split(\'\\n\'),inC=false,buf=\'\',i,l,liOpen=false;';
     html += 'for(i=0;i<lines.length;i++){';
     html += 'l=lines[i];';
+    // Close an open list before any non-list line.
+    html += 'if(liOpen&&l.indexOf(\'- \')!==0&&!/^\\d+\\.\\s/.test(l)){h+=\'</ul>\';liOpen=false}';
     html += 'if(l.indexOf(\'\\x60\\x60\\x60\')===0){';
     html += 'if(inC){h+=\'<pre><code>\'+esc(buf)+\'</code></pre>\';buf=\'\';inC=false}else{inC=true}';
     html += 'continue}';
     html += 'if(inC){buf+=l+\'\\n\';continue}';
-    html += 'if(l.indexOf(\'### \')===0){h+=\'<h3>\'+l.slice(4)+\'</h3>\'}';
-    html += 'else if(l.indexOf(\'## \')===0){h+=\'<h2>\'+l.slice(3)+\'</h2>\'}';
-    html += 'else if(l.indexOf(\'# \')===0&&l.indexOf(\'#include\')<0&&l.indexOf(\'#define\')<0){h+=\'<h1>\'+l.slice(2)+\'</h1>\'}';
-    html += 'else if(l.indexOf(\'- \')===0){h+=\'<li>\'+l.slice(2)+\'</li>\'}';
-    html += 'else if(/^\\d+\\.\\s/.test(l)){h+=\'<li>\'+l.replace(/^\\d+\\.\\s/,\'\')+\'</li>\'}';
-    html += 'else if(l.trim()===\'\'){h+=\'<p></p>\'}';
+    html += 'if(l.indexOf(\'### \')===0){h+=\'<h3>\'+esc(l.slice(4))+\'</h3>\'}';
+    html += 'else if(l.indexOf(\'## \')===0){h+=\'<h2>\'+esc(l.slice(3))+\'</h2>\'}';
+    html += 'else if(l.indexOf(\'# \')===0&&l.indexOf(\'#include\')<0&&l.indexOf(\'#define\')<0){h+=\'<h1>\'+esc(l.slice(2))+\'</h1>\'}';
+    html += 'else if(l.indexOf(\'- \')===0){if(!liOpen){h+=\'<ul>\';liOpen=true}h+=\'<li>\'+esc(l.slice(2))+\'</li>\'}';
+    html += 'else if(/^\\d+\\.\\s/.test(l)){if(!liOpen){h+=\'<ul>\';liOpen=true}h+=\'<li>\'+esc(l.replace(/^\\d+\\.\\s/,\'\'))+\'</li>\'}';
+    html += 'else{if(l.trim()===\'\'){h+=\'<p></p>\'}';
     html += 'else{';
-    html += 'var m=l.replace(/\\*\\*(.+?)\\*\\*/g,\'<strong>$1</strong>\').replace(/\\*(.+?)\\*/g,\'<em>$1</em>\').replace(/\\x60([^\\x60]+)\\x60/g,\'<code>$1</code>\');';
-    html += 'h+=\'<p>\'+m+\'</p>\'}';
+    html += 'var m=esc(l).replace(/\\*\\*(.+?)\\*\\*/g,\'<strong>$1</strong>\').replace(/\\*(.+?)\\*/g,\'<em>$1</em>\').replace(/\\x60([^\\x60]+)\\x60/g,\'<code>$1</code>\');';
+    html += 'h+=\'<p>\'+m+\'</p>\'}}';
     html += '}';
+    html += 'if(liOpen){h+=\'</ul>\';liOpen=false}';
     html += 'if(inC){h+=\'<pre><code>\'+esc(buf)+\'</code></pre>\'}';
     html += 'return \'<div>\'+h+\'</div>\'}';
 
-    // update display
+    // update display — throttled via requestAnimationFrame so chunks arriving
+    // faster than the render loop don't re-render the whole markdown each time
     // eslint-disable-next-line no-useless-escape
     html += 'function upd(){out.innerHTML=render(txt)+(done?\'\':\'<span class=\\"cur\\"></span>\')}';
+    html += 'var upding=false;';
+    html += 'function scheduleUpd(){if(!upding){upding=true;requestAnimationFrame(function(){upding=false;upd();})}}';
 
-    // message handler
+    // message handler — registered BEFORE signaling ready, so no messages are lost
     html += 'window.addEventListener(\'message\',function(e){';
     html += 'var m=e.data;';
     html += 'switch(m.type){';
     html += 'case\'stream-start\':txt=\'\';done=false;st.style.display=\'flex\';out.innerHTML=\'\';break;';
-    html += 'case\'stream-chunk\':st.style.display=\'none\';txt+=m.text;upd();break;';
-    html += 'case\'stream-end\':done=true;st.style.display=\'none\';if(m.elapsed){var sec=(m.elapsed/1000).toFixed(1);var tokens=Math.round((m.chars||0)/4);header="⏱ "+sec+"s · "+tokens+"tok";}upd();break;';
-
-'}upd();break;';
+    html += 'case\'stream-chunk\':st.style.display=\'none\';txt+=m.text;scheduleUpd();break;';
+    html += 'case\'stream-end\':done=true;st.style.display=\'none\';upd();break;';
     // eslint-disable-next-line no-useless-escape
     html += 'case\'stream-error\':st.style.display=\'none\';out.innerHTML=\'<div class=\\\"err\\\">\'+esc(m.message)+\'</div>\';break;';
     html += '}';
     html += '});';
+    // Handshake: signal ready only after the listener above is registered.
+    html += 'api.postMessage({type:\'ready\'});';
 
     // re-explain button
     html += 'document.getElementById(\'re\').addEventListener(\'click\',function(){api.postMessage({type:\'re-explain\',cellIndex:' + ci + '})});';

@@ -43,7 +43,8 @@ export const STRUCTURAL_PATTERNS: Record<string, StructuralPatterns> = {
     isTopLevel: (line: string) => line.length > 0 && line[0] !== ' ' && line[0] !== '\t',
   },
   java: {
-    functionDef: /\b(public|private|protected|static)\s+\w+\s+\w+\s*\(/,
+    // Modifiers optional — `int add(int a)` without any modifier must match too.
+    functionDef: /\b((public|private|protected|static|final|synchronized|abstract|native)\s+)*[\w<>]+(\[\])?\s+\w+\s*\(/,
     classDef: /^((public|abstract|final)\s+)?(class|interface|enum)\s+\w+/,
     importDef: /^import\s+\w+/,
   },
@@ -78,7 +79,7 @@ export function autoSplit(
   lines: string[],
   options: AutoSplitOptions
 ): SplitPoint[] {
-  const { minLinesPerCell, patterns } = options;
+  const { patterns } = options;
   const splits: SplitPoint[] = [];
   const passes: SplitPoint[][] = [];
 
@@ -92,7 +93,7 @@ export function autoSplit(
   }
 
   // Pass 2: Blank-line separation
-  const blankLineSplits = blankLinePass(lines, minLinesPerCell);
+  const blankLineSplits = blankLinePass(lines);
   // Only use blank-line splits if no structural splits were found
   if (passes.length === 0) {
     passes.push(blankLineSplits);
@@ -153,7 +154,7 @@ function structuralPass(lines: string[], patterns: StructuralPatterns): SplitPoi
 /**
  * Pass 2: Split by blank lines (2+ consecutive blank lines = cell boundary)
  */
-function blankLinePass(lines: string[], minLinesPerCell: number): SplitPoint[] {
+function blankLinePass(lines: string[]): SplitPoint[] {
   const splits: SplitPoint[] = [];
 
   let consecutiveBlankLines = 0;

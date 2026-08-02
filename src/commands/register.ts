@@ -4,6 +4,7 @@
 
 import * as vscode from 'vscode';
 import { withLock, getCodeLearnerSettings } from '../state';
+import { t } from '../utils/helpers';
 import { openAsNotebook } from './notebook-commands';
 import { explainSelectedCode, explainNotebookCell, askQuestion } from './explain-commands';
 import { reExplain, deleteExplanation, copyQA, deleteQA, toComment, deleteAtCursor,copyExplanation } from './manage-commands';
@@ -121,46 +122,49 @@ export function registerAllCommands(
     })
   );
 
+  let syncTimer: ReturnType<typeof setTimeout> | undefined;
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument(e => {
       if (e.document.uri.scheme !== 'file' && e.document.uri.scheme !== 'vscode-notebook-cell') return;
-      // Sync explanations: auto-hide if code deleted, restore if undone
-      codelensProvider?.syncExplanationsWithDocument(e.document);
-      for (const ed of vscode.window.visibleTextEditors) {
-        if (ed.document.uri.toString() === e.document.uri.toString()) {
-          codelensProvider?.applyAllDecorations(ed);
-          break;
+      // Debounce: sync + decoration replay scan the whole document, which is
+      // too heavy to run on every keystroke.
+      if (syncTimer) clearTimeout(syncTimer);
+      syncTimer = setTimeout(() => {
+        // Sync explanations: auto-hide if code deleted, restore if undone
+        codelensProvider?.syncExplanationsWithDocument(e.document);
+        for (const ed of vscode.window.visibleTextEditors) {
+          if (ed.document.uri.toString() === e.document.uri.toString()) {
+            codelensProvider?.applyAllDecorations(ed);
+            break;
+          }
         }
-      }
+      }, 250);
     })
   );
+  // Clear the pending debounce timer on deactivation.
+  context.subscriptions.push({ dispose: () => { if (syncTimer) clearTimeout(syncTimer); } });
 
-  // Handle file renames: update stored explanations with new path
+  // Handle file renames: migrate stored explanations and pairs to the new path
+  // without touching explanations stored under paired files (e.g. the old .ipynb).
   context.subscriptions.push(
     vscode.workspace.onDidRenameFiles(async (e) => {
       if (!codelensProvider) return;
       for (const file of e.files) {
         const oldPath = file.oldUri.fsPath;
         const newPath = file.newUri.fsPath;
-        const exps = codelensProvider.getExplanationsWithPositions(oldPath);
-        if (exps.length > 0) {
-          for (const exp of exps) {
-            const snippet = exp.snippet || '';
-            await codelensProvider.addExplanation(newPath, new vscode.Range(0, 0, 0, 0), exp.explanation, '', snippet);
-          }
-          await codelensProvider.removeExplanation(oldPath, 0);
-        }
+        await codelensProvider.renameExplanations(oldPath, newPath);
       }
     })
   );
 
   // ── Status bar ────────────────────────────────────────
   const sb = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-  sb.text = 'Open as Jupyter Notebook';
   sb.command = 'code-learner.openAsNotebook';
   context.subscriptions.push(sb);
 
   const updateSb = () => {
+    // Text refreshed on every update so a UI language change takes effect.
+    sb.text = t('以 Jupyter Notebook 打开', 'Open as Jupyter Notebook');
     const e = vscode.window.activeTextEditor;
     if (e && e.document.uri.scheme === 'file' && e.document.languageId !== 'ipynb') sb.show();
     else sb.hide();

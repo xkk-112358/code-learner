@@ -73,21 +73,33 @@ export class ClaudeProvider implements AIProvider {
                 yield parsed.delta.text;
               }
               break;
+            case 'message_delta':
+              // Truncated output must not be treated as a complete result
+              // (and must not be cached) — surface it to the user instead.
+              if (parsed.delta?.stop_reason === 'max_tokens') {
+                throw new Error('AI response was truncated by max_tokens. Increase codeLearner.maxTokens and retry.');
+              }
+              break;
             case 'message_stop':
               return;
             case 'error':
               throw new Error(parsed.error?.message || 'Claude API error');
           }
         } catch (e) {
-          const err = e instanceof Error ? e : new Error(String(e));
-          if (err.message !== 'Claude API error') {
+          // Only skip malformed SSE payloads (JSON.parse failures). Real
+          // streamed API errors (rate limit, overloaded, ...) must propagate —
+          // swallowing them yields truncated explanations that then get cached.
+          if (e instanceof SyntaxError) {
             continue;
           }
-          throw err;
+          throw e;
         }
       }
     } catch (error) {
-      if (error instanceof Error && error.message === 'Request aborted') {
+      // Aborting destroys the socket, which surfaces as an arbitrary stream
+      // error (e.g. ECONNRESET) rather than 'Request aborted' — treat any
+      // error after an abort as a clean cancellation.
+      if (this.abortController?.signal.aborted || (error instanceof Error && error.message === 'Request aborted')) {
         return;
       }
       throw error;

@@ -1,6 +1,12 @@
 /**
  * Parser registry - maps language IDs to parser instances.
  * Central factory for all code parsers.
+ *
+ * NOTE: The parser subsystem (BaseParser + language parsers + auto-splitter +
+ * manual markers) is NOT wired into the production path — cell splitting in
+ * the live flow goes through the AI (nb-generator). This code is kept as a
+ * tested, reusable foundation for future structure-aware features and is
+ * exercised only by unit tests.
  */
 
 import * as vscode from 'vscode';
@@ -93,22 +99,5 @@ export class ParserRegistry {
   parse(document: vscode.TextDocument, options?: Partial<import('./cell').ParseOptions>): import('./cell').CodeCell[] {
     const parser = this.getParser(document.languageId);
     return parser.parse(document, options);
-  }
-
-  /**
-   * Get VS Code language selectors for all supported languages
-   */
-  getSupportedLanguageSelectors(): vscode.DocumentFilter[] {
-    const selectors: vscode.DocumentFilter[] = [];
-
-    // Built-in parsers
-    for (const langId of this.parsers.keys()) {
-      selectors.push({ language: langId, scheme: 'file' });
-    }
-
-    // Generic parsers cover everything else - but we don't register them as document selectors
-    // since we handle them dynamically
-
-    return selectors;
   }
 }

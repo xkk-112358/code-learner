@@ -10,6 +10,16 @@ interface CacheEntry {
   timestamp: number;
 }
 
+/** Stable content hash (FNV-1a) — used to keep cache keys in sync with cell content. */
+function contentHash(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
+}
+
 export class ExplanationCache {
   private cache = new Map<string, CacheEntry>();
   private readonly maxSize: number;
@@ -19,17 +29,22 @@ export class ExplanationCache {
   }
 
   /**
-   * Build a cache key from cell and file information
+   * Build a cache key from cell and file information.
+   * Includes a content hash so that editing the code invalidates the
+   * cached explanation for the same cell index, and an optional project
+   * fingerprint so explanations referencing stale project context are
+   * not reused.
    */
-  getKey(cell: CodeCell, filePath: string, lang: string): string {
-    return `${filePath}::${cell.index}::${lang}`;
+  getKey(cell: CodeCell, filePath: string, lang: string, projectKey?: string): string {
+    const base = `${filePath}::${cell.index}::${contentHash(cell.source || '')}::${lang}`;
+    return projectKey ? `${base}::${projectKey}` : base;
   }
 
   /**
    * Get cached explanation
    */
-  get(cell: CodeCell, filePath: string, lang: string): string | undefined {
-    const key = this.getKey(cell, filePath, lang);
+  get(cell: CodeCell, filePath: string, lang: string, projectKey?: string): string | undefined {
+    const key = this.getKey(cell, filePath, lang, projectKey);
     const entry = this.cache.get(key);
 
     if (entry) {
@@ -45,8 +60,8 @@ export class ExplanationCache {
   /**
    * Store explanation in cache
    */
-  set(cell: CodeCell, filePath: string, lang: string, explanation: string): void {
-    const key = this.getKey(cell, filePath, lang);
+  set(cell: CodeCell, filePath: string, lang: string, explanation: string, projectKey?: string): void {
+    const key = this.getKey(cell, filePath, lang, projectKey);
 
     // Evict oldest if at capacity
     if (this.cache.size >= this.maxSize) {
@@ -63,7 +78,9 @@ export class ExplanationCache {
   }
 
   /**
-   * Invalidate all cache entries for a specific file path
+   * Invalidate all cache entries for a specific file path.
+   * Called when explanations are deleted so a re-explain actually re-queries
+   * the AI instead of replaying the removed (cached) result.
    */
   invalidate(filePath: string): void {
     for (const [key] of this.cache) {
@@ -71,13 +88,6 @@ export class ExplanationCache {
         this.cache.delete(key);
       }
     }
-  }
-
-  /**
-   * Check if a cell has a cached explanation
-   */
-  has(cell: CodeCell, filePath: string, lang: string): boolean {
-    return this.cache.has(this.getKey(cell, filePath, lang));
   }
 
   /**

@@ -29,7 +29,7 @@ export class CodeLearnerSettings {
       openaiEndpoint: config.get<string>('openaiEndpoint', 'https://api.openai.com/v1'),
       openaiModel: config.get<string>('openaiModel', 'gpt-4o-mini'),
       claudeEndpoint: config.get<string>('claudeEndpoint', 'https://api.anthropic.com'),
-      claudeModel: config.get<string>('claudeModel', 'claude-sonnet-4-20250514'),
+      claudeModel: config.get<string>('claudeModel', 'claude-sonnet-5'),
       maxTokens: config.get<number>('maxTokens', 2000),
       temperature: config.get<number>('temperature', 0.3),
       cacheEnabled: config.get<boolean>('cacheEnabled', true),
@@ -54,9 +54,6 @@ export class CodeLearnerSettings {
     );
     if (!provider) return;
 
-    const config = vscode.workspace.getConfiguration('codeLearner');
-    await config.update('provider', provider.target, vscode.ConfigurationTarget.Global);
-
     const key = await vscode.window.showInputBox({
       prompt: `Enter your ${provider.target === 'openai' ? 'OpenAI' : 'Claude'} API key`,
       password: true,
@@ -64,7 +61,6 @@ export class CodeLearnerSettings {
       placeHolder: provider.target === 'openai' ? 'sk-...' : 'sk-ant-...',
     });
     if (!key) return;
-    await this.setApiKey(provider.target, key);
 
     const defaultEndpoint = provider.target === 'openai'
       ? 'https://api.openai.com/v1'
@@ -74,17 +70,23 @@ export class CodeLearnerSettings {
       value: defaultEndpoint,
       ignoreFocusOut: true,
     });
-    if (endpoint) {
-      const keyName = provider.target === 'openai' ? 'openaiEndpoint' : 'claudeEndpoint';
-      await config.update(keyName, endpoint, vscode.ConfigurationTarget.Global);
-    }
 
-    const defaultModel = provider.target === 'openai' ? 'gpt-4o-mini' : 'claude-sonnet-4-20250514';
+    const defaultModel = provider.target === 'openai' ? 'gpt-4o-mini' : 'claude-sonnet-5';
     const model = await vscode.window.showInputBox({
       prompt: 'Model name (Enter for default: ' + defaultModel + ')',
       value: defaultModel,
       ignoreFocusOut: true,
     });
+
+    // Apply everything only after all input was collected, so cancelling the
+    // wizard partway never leaves a half-configured extension.
+    const config = vscode.workspace.getConfiguration('codeLearner');
+    await config.update('provider', provider.target, vscode.ConfigurationTarget.Global);
+    await this.setApiKey(provider.target, key);
+    if (endpoint) {
+      const keyName = provider.target === 'openai' ? 'openaiEndpoint' : 'claudeEndpoint';
+      await config.update(keyName, endpoint, vscode.ConfigurationTarget.Global);
+    }
     if (model) {
       const keyName = provider.target === 'openai' ? 'openaiModel' : 'claudeModel';
       await config.update(keyName, model, vscode.ConfigurationTarget.Global);

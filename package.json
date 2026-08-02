@@ -18,9 +18,6 @@
   "keywords": [
     "jupyter", "notebook", "learn", "code", "explain", "ai", "ipynb"
   ],
-  "activationEvents": [
-    "onStartupFinished"
-  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
@@ -53,6 +50,34 @@
       {
         "command": "code-learner.deleteAtCursor",
         "title": "%code-learner.deleteAtCursor%"
+      },
+      {
+        "command": "code-learner.reExplain",
+        "title": "%code-learner.reExplain%"
+      },
+      {
+        "command": "code-learner.deleteExplanation",
+        "title": "%code-learner.deleteExplanation%"
+      },
+      {
+        "command": "code-learner.copyQA",
+        "title": "%code-learner.copyQA%"
+      },
+      {
+        "command": "code-learner.deleteQA",
+        "title": "%code-learner.deleteQA%"
+      },
+      {
+        "command": "code-learner.askQuestion",
+        "title": "%code-learner.askQuestion%"
+      },
+      {
+        "command": "code-learner.toComment",
+        "title": "%code-learner.toComment%"
+      },
+      {
+        "command": "code-learner.copyExplanation",
+        "title": "%code-learner.copyExplanation%"
       }
     ],
     "menus": {
@@ -69,7 +94,8 @@
         },
         {
           "command": "code-learner.convertAllToComments",
-          "group": "code-learner@3"
+          "group": "code-learner@3",
+          "when": "editorLangId != 'ipynb'"
         },
         {
           "command": "code-learner.deleteAtCursor",
@@ -114,7 +140,7 @@
         },
         "codeLearner.claudeModel": {
           "type": "string",
-          "default": "claude-sonnet-4-20250514",
+          "default": "claude-sonnet-5",
           "description": "Claude model name"
         },
         "codeLearner.maxTokens": {

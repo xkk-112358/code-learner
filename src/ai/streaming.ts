@@ -10,6 +10,10 @@
 import * as https from 'https';
 import * as http from 'http';
 
+/** Socket idle timeout. Generous on purpose: reasoning models can take a
+ *  while to emit the first token, and this is NOT a total-request timeout. */
+const REQUEST_TIMEOUT_MS = 120_000;
+
 export interface HttpResponse {
   statusCode: number;
   headers: Record<string, string>;
@@ -39,9 +43,13 @@ export function nodeRequest(
       port: urlObj.port || (isHttps ? 443 : 80),
       path: urlObj.pathname + urlObj.search,
       method: options.method || 'GET',
-      headers: options.headers,
-      timeout: 30000,
+      // Some API gateways (e.g. Cloudflare) reject requests without a
+      // User-Agent header.
+      headers: { 'User-Agent': 'code-learner-vscode-extension', ...options.headers },
+      timeout: REQUEST_TIMEOUT_MS,
     };
+
+    let settled = false;
 
     const req = mod.request(reqOptions, (res) => {
       const headers: Record<string, string> = {};
@@ -51,6 +59,7 @@ export function nodeRequest(
         }
       }
 
+      settle();
       resolve({
         statusCode: res.statusCode || 0,
         headers,
@@ -58,7 +67,27 @@ export function nodeRequest(
       });
     });
 
+    // Remove the abort listener once the promise settles so listeners don't
+    // accumulate on the signal across requests.
+    function settle(): void {
+      if (settled) return;
+      settled = true;
+      if (options.signal) {
+        options.signal.removeEventListener('abort', onAbort);
+      }
+    }
+
+    function onAbort(): void {
+      // Remove the listener first: req.destroy() without an error only emits
+      // 'close' (not 'error'), so the error handler's settle() would never
+      // run and the listener would leak on every cancellation.
+      settle();
+      req.destroy();
+      reject(new Error('Request aborted'));
+    }
+
     req.on('error', (err: NodeJS.ErrnoException) => {
+      settle();
       if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND' || err.code === 'ETIMEDOUT') {
         reject(new Error(`Network error: Unable to connect to ${urlObj.hostname}. Check your network/proxy settings. (${err.message})`));
       } else {
@@ -67,16 +96,14 @@ export function nodeRequest(
     });
 
     req.on('timeout', () => {
+      settle();
       req.destroy();
-      reject(new Error(`Request timeout: ${urlObj.hostname} did not respond within 30s`));
+      reject(new Error(`Request timeout: ${urlObj.hostname} did not respond within ${REQUEST_TIMEOUT_MS / 1000}s`));
     });
 
     // Handle abort signal
     if (options.signal) {
-      options.signal.addEventListener('abort', () => {
-        req.destroy();
-        reject(new Error('Request aborted'));
-      });
+      options.signal.addEventListener('abort', onAbort);
     }
 
     if (options.body) {

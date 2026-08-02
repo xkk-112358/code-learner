@@ -3,12 +3,30 @@
  */
 
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { CodeLearnerSettings } from '../config/settings';
 import { AIProvider, ExplanationRequest, ProjectFileInfo } from './provider';
 import { OpenAIProvider } from './openai-provider';
 import { ClaudeProvider } from './claude-provider';
 import { ExplanationCache } from './cache';
 import { CodeCell } from '../parser/cell';
+
+/** FNV-1a fingerprint of the project context, used in the explanation cache key. */
+function fingerprintProject(project: { fileTree: string; files: ProjectFileInfo[] }): string {
+  let hash = 0x811c9dc5;
+  const feed = (s: string): void => {
+    for (let i = 0; i < s.length; i++) {
+      hash ^= s.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193);
+    }
+  };
+  feed(project.fileTree);
+  for (const f of project.files) {
+    feed(f.name);
+    feed(f.snippet || '');
+  }
+  return (hash >>> 0).toString(36);
+}
 
 export class AIServiceManager {
   private openAIProvider: OpenAIProvider | null = null;
@@ -64,7 +82,6 @@ export class AIServiceManager {
 
     let fileTree = '';
     const files: ProjectFileInfo[] = [];
-    const thisFileName = filePath.split(/[/\\]/).pop() || '';
 
     try {
       // Find workspace root
@@ -76,7 +93,7 @@ export class AIServiceManager {
 
       const rootUri = workspaceFolders[0].uri;
       const rootPath = rootUri.fsPath;
-      const relativePath = filePath.startsWith(rootPath) ? filePath.slice(rootPath.length + 1) : thisFileName;
+      const relativePath = filePath.startsWith(rootPath) ? filePath.slice(rootPath.length + 1) : filePath.split(/[/\\]/).pop() || '';
 
       // Build file tree (ignore node_modules, .git, __pycache__, etc.)
       const ignored = new Set(['node_modules', '.git', '__pycache__', '.venv', 'venv', 'dist', 'build', '.vscode']);
@@ -98,12 +115,18 @@ export class AIServiceManager {
                 const ext = name.split('.').pop()?.toLowerCase();
                 if (ext && ['py', 'js', 'ts', 'jsx', 'tsx', 'java', 'go', 'rs', 'cpp', 'c', 'h', 'rb', 'php', 'swift', 'kt', 'cs', 'css', 'html', 'json'].includes(ext)) {
                   try {
-                    const content = await vscode.workspace.fs.readFile(vscode.Uri.joinPath(uri, name));
+                    const fileUri = vscode.Uri.joinPath(uri, name);
+                    // Use workspace-relative paths so same-named files in
+                    // different directories don't get mixed up in the prompt.
+                    const relName = path.relative(rootPath, fileUri.fsPath) || name;
+                    // The current file is already sent in full via fullSource —
+                    // skip it here to avoid paying tokens twice.
+                    if (relName === relativePath) continue;
+                    const content = await vscode.workspace.fs.readFile(fileUri);
                     const text = new TextDecoder().decode(content);
                     const lines = text.split('\n');
-                    const maxLines = name === thisFileName ? lines.length : Math.min(lines.length, 30);
-                    const snippet = lines.slice(0, maxLines).join('\n');
-                    files.push({ name: relativePath ? name : name, snippet: snippet.length > 2000 ? snippet.slice(0, 2000) + '...' : snippet });
+                    const snippet = lines.slice(0, 30).join('\n');
+                    files.push({ name: relName, snippet: snippet.length > 2000 ? snippet.slice(0, 2000) + '...' : snippet });
                   } catch { /* skip */ }
                 }
               }
@@ -134,22 +157,30 @@ export class AIServiceManager {
     cell: CodeCell,
     fileUri: vscode.Uri,
     document: { getText: () => string; languageId: string; lineCount?: number },
-    forceRefresh: boolean = false
+    forceRefresh: boolean = false,
+    cacheable: boolean = true
   ): AsyncIterable<string> {
     const config = this.settings.getConfig();
     const explanationLang = this.resolveExplanationLanguage();
-    const filePath = fileUri.fsPath;
+    // For notebook-cell URIs fsPath is not a meaningful cache key — use the
+    // full URI string so cells in the same notebook map consistently.
+    const cachePath = fileUri.scheme === 'file' ? fileUri.fsPath : fileUri.toString();
+
+    // Project context is computed BEFORE the cache check so its fingerprint
+    // can be part of the cache key: explanations go stale when other files
+    // in the project change.
+    const project = await this.getProjectContext(cachePath);
+    const projectKey = fingerprintProject(project);
 
     // Check cache
     if (!forceRefresh && config.cacheEnabled) {
-      const cached = this.cache.get(cell, filePath, explanationLang);
+      const cached = this.cache.get(cell, cachePath, explanationLang, projectKey);
       if (cached) { yield cached; return; }
     }
 
     // Get provider and build request
     const provider = await this.getProvider();
     const fullSource = typeof document.getText === 'function' ? document.getText() : '';
-    const project = await this.getProjectContext(filePath);
     const projectFiles = [
       { name: '📁 Project Structure', snippet: project.fileTree },
       ...project.files,
@@ -158,7 +189,7 @@ export class AIServiceManager {
     const request: ExplanationRequest = {
       cell,
       context: {
-        filePath,
+        filePath: cachePath,
         language: document.languageId,
         fullSource,
         projectFiles,
@@ -172,19 +203,10 @@ export class AIServiceManager {
       yield chunk;
     }
 
-    if (config.cacheEnabled && accumulated) {
-      this.cache.set(cell, filePath, explanationLang, accumulated);
+    // Q&A prompts (cacheable=false) must not pollute the explanation cache.
+    if (cacheable && config.cacheEnabled && accumulated) {
+      this.cache.set(cell, cachePath, explanationLang, accumulated, projectKey);
     }
-  }
-
-  getCachedExplanation(cell: CodeCell, filePath: string): string | undefined {
-    const lang = this.resolveExplanationLanguage();
-    return this.cache.get(cell, filePath, lang);
-  }
-
-  hasCache(cell: CodeCell, filePath: string): boolean {
-    const lang = this.resolveExplanationLanguage();
-    return this.cache.has(cell, filePath, lang);
   }
 
   abort(): void {
@@ -192,6 +214,7 @@ export class AIServiceManager {
     this.claudeProvider?.abort();
   }
 
+  /** Drop cached explanations for a file (used when explanations are deleted). */
   invalidateCache(filePath: string): void {
     this.cache.invalidate(filePath);
   }

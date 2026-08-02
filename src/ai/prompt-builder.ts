@@ -10,9 +10,18 @@ export interface BuiltPrompts {
   userPrompt: string;
 }
 
+/** Cap for the full-file source embedded in the system prompt (chars). */
+export const FULL_SOURCE_LIMIT = 12_000;
+
 export function buildExplanationPrompt(request: ExplanationRequest): BuiltPrompts {
   const { cell, context, explanationLanguage } = request;
-  const { language, fullSource, filePath, projectFiles } = context;
+  const { language, projectFiles } = context;
+
+  // Truncate the full-file source: very large files would otherwise blow the
+  // model context window (files up to 500KB are allowed by fs-utils).
+  const fullSource = context.fullSource.length > FULL_SOURCE_LIMIT
+    ? context.fullSource.slice(0, FULL_SOURCE_LIMIT) + '\n\n... (file truncated for length)'
+    : context.fullSource;
 
   const isChinese = explanationLanguage === 'zh-CN';
 

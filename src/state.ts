@@ -36,10 +36,13 @@ export async function withLock<T>(label: string, fn: () => Promise<T>): Promise<
   }
   _processing = true;
 
-  // Safety timeout: auto-release lock if operation hangs
+  // Safety timeout: auto-release lock if operation hangs, and abort the
+  // underlying request so it stops running (and stops writing cache/UI) in
+  // the background.
   _processingTimer = setTimeout(() => {
     _processing = false;
     _processingTimer = undefined;
+    getAIServiceManager()?.abort();
     console.error(`[Code Learner] Lock auto-released: "${label}" exceeded ${LOCK_TIMEOUT_MS / 1000}s`);
   }, LOCK_TIMEOUT_MS);
 
@@ -65,7 +68,6 @@ export function getAIServiceManager(): AIServiceManager | undefined { return _ai
 export function getCodeLearnerSettings(): CodeLearnerSettings | undefined { return _codeLearnerSettings; }
 export function getCodeLensProvider(): CodeLearnerCodeLensProvider | undefined { return _codelensProvider; }
 export function getAIHover(): AIHoverProvider | undefined { return _aiHover; }
-export function getCache(): ExplanationCache | undefined { return _cache; }
 
 // ── Setters ─────────────────────────────────────────────
 

@@ -51,5 +51,5 @@ export async function deactivate(): Promise<void> {
   // Cleanup is handled by `registerAllCommands` subscriptions,
   // but we save one final time to be safe.
   const cp = (await import('./state')).getCodeLensProvider();
-  if (cp) { await (cp as any).dispose(); }
+  if (cp) { await cp.dispose(); }
 }

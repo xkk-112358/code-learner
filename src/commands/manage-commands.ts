@@ -37,6 +37,9 @@ export async function deleteExplanation(uri: vscode.Uri, line: number): Promise<
     }
   } catch { /* fallback: no fingerprint = delete all for the file */ }
   await codelensProvider.removeExplanation(uri.fsPath, line, fingerprint);
+  // Also drop the AI cache, so re-explaining queries the API again instead of
+  // replaying the just-deleted result.
+  getAIServiceManager()?.invalidateCache(uri.fsPath);
   await vscode.commands.executeCommand('editor.action.hideHover');
 }
 
@@ -57,7 +60,9 @@ export async function toComment(uri: vscode.Uri, line: number): Promise<void> {
   const codelensProvider = getCodeLensProvider();
   if (!codelensProvider || !uri) return;
   const doc = await vscode.workspace.openTextDocument(uri);
-  const exp = codelensProvider.getExplanation(uri, line, doc.lineAt(Math.min(line, doc.lineCount - 1)).text);
+  // Guard against empty documents (lineCount === 0 → lineAt(-1) throws).
+  const lineText = doc.lineCount > 0 ? doc.lineAt(Math.min(line, doc.lineCount - 1)).text : '';
+  const exp = codelensProvider.getExplanation(uri, line, lineText);
   if (!exp) return;
   const cc = getCommentChar(doc.languageId);
   const cl = buildCommentBlock(exp.explanation, cc);
@@ -93,6 +98,8 @@ export async function deleteAtCursor(): Promise<void> {
 
   // Remove all explanations for this file (removeExplanation handles paired paths too)
   await codelensProvider.removeExplanation(filePath, 0);
+  // Drop the AI cache so re-explaining re-queries the API.
+  getAIServiceManager()?.invalidateCache(filePath);
   vscode.window.showInformationMessage(
     t(`已删除 ${exps.length} 条 AI 解释`, `Deleted ${exps.length} AI explanations`)
   );

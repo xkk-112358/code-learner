@@ -12,7 +12,16 @@ export interface ConversionResult {
   content: string;
   /** The raw AI response text */
   rawResponse: string;
+  /** True when the AI response was invalid JSON and a blank-line fallback was used. */
+  usedFallback: boolean;
 }
+
+/**
+ * Max source chars sent to the AI for notebook conversion.
+ * Code beyond this limit is NOT included in the resulting .ipynb,
+ * so callers must warn the user before converting larger files.
+ */
+export const NOTEBOOK_SOURCE_CHAR_LIMIT = 15_000;
 
 export interface StoredExplanation {
   snippet: string;
@@ -50,20 +59,27 @@ export async function generateNotebook(
   // Build the AI prompt for notebook conversion
   const prompt = buildNotebookPrompt(source, language, fileName);
 
+  // Scale the output budget with the input size: the JSON + escaped code of a
+  // file near the char limit easily exceeds a fixed 4096-token budget, which
+  // used to truncate the response and silently fall back to blank-line split.
+  const truncatedSource = source.length > NOTEBOOK_SOURCE_CHAR_LIMIT
+    ? source.slice(0, NOTEBOOK_SOURCE_CHAR_LIMIT)
+    : source;
+  const maxTokens = Math.min(16384, 4096 + Math.ceil(truncatedSource.length / 3));
+
   // Call AI and get the response
-  const response = await callAiForNotebook(prompt, settings);
+  const response = await callAiForNotebook(prompt, settings, maxTokens);
 
   // Parse the AI response into .ipynb JSON
-  const notebookJson = parseResponseToNotebook(response, source, language, fileName, existingExplanations);
+  const { json: notebookJson, usedFallback } = parseResponseToNotebook(response, source, language, fileName, existingExplanations);
 
-  return { content: notebookJson, rawResponse: response };
+  return { content: notebookJson, rawResponse: response, usedFallback };
 }
 
 function buildNotebookPrompt(source: string, language: string, fileName: string): string {
   // Truncate very large files
-  const maxChars = 15000;
-  const truncatedSource = source.length > maxChars
-    ? source.slice(0, maxChars) + '\n\n... (file truncated)'
+  const truncatedSource = source.length > NOTEBOOK_SOURCE_CHAR_LIMIT
+    ? source.slice(0, NOTEBOOK_SOURCE_CHAR_LIMIT) + '\n\n... (file truncated)'
     : source;
 
   return `Convert this ${language} code file into a code-only Jupyter notebook (.ipynb).
@@ -91,7 +107,7 @@ Respond ONLY with valid JSON in this exact format (no markdown, no \`\`\`json):
 Do not include any text before or after the JSON.`;
 }
 
-async function callAiForNotebook(prompt: string, settings: CodeLearnerSettings): Promise<string> {
+async function callAiForNotebook(prompt: string, settings: CodeLearnerSettings, maxTokens: number): Promise<string> {
   const config = settings.getConfig();
   const apiKey = await settings.getApiKey(config.provider);
 
@@ -100,16 +116,17 @@ async function callAiForNotebook(prompt: string, settings: CodeLearnerSettings):
   }
 
   if (config.provider === 'openai') {
-    return callOpenAI(apiKey, config, prompt);
+    return callOpenAI(apiKey, config, prompt, maxTokens);
   } else {
-    return callClaude(apiKey, config, prompt);
+    return callClaude(apiKey, config, prompt, maxTokens);
   }
 }
 
 async function callOpenAI(
   apiKey: string,
   config: import('../config/settings').CodeLearnerConfig,
-  prompt: string
+  prompt: string,
+  maxTokens: number
 ): Promise<string> {
   const endpoint = config.openaiEndpoint.replace(/\/$/, '');
   const url = `${endpoint}/chat/completions`;
@@ -118,7 +135,7 @@ async function callOpenAI(
     model: config.openaiModel,
     stream: false,
     temperature: 0.2,
-    max_tokens: 4096,
+    max_tokens: maxTokens,
     messages: [
       { role: 'system', content: 'You are a code-to-notebook converter. Output ONLY valid JSON.' },
       { role: 'user', content: prompt },
@@ -152,7 +169,8 @@ async function callOpenAI(
 async function callClaude(
   apiKey: string,
   config: import('../config/settings').CodeLearnerConfig,
-  prompt: string
+  prompt: string,
+  maxTokens: number
 ): Promise<string> {
   const endpoint = config.claudeEndpoint.replace(/\/$/, '');
   const url = `${endpoint}/v1/messages`;
@@ -160,7 +178,7 @@ async function callClaude(
   const body = JSON.stringify({
     model: config.claudeModel,
     stream: false,
-    max_tokens: 4096,
+    max_tokens: maxTokens,
     system: 'You are a code-to-notebook converter. Output ONLY valid JSON.',
     messages: [{ role: 'user', content: prompt }],
   });
@@ -196,7 +214,7 @@ function parseResponseToNotebook(
   language: string,
   fileName: string,
   existingExplanations?: StoredExplanation[]
-): string {
+): { json: string; usedFallback: boolean } {
   // Try to extract JSON from the response (handle backtick-wrapped JSON)
   let jsonStr = response.trim();
 
@@ -212,11 +230,20 @@ function parseResponseToNotebook(
   }
 
   let cells: RawCell[];
+  let usedFallback = false;
   try {
     const parsed = JSON.parse(jsonStr);
-    cells = parsed.cells || [];
+    // Valid JSON with no cells (or a non-array "cells") must not produce an
+    // empty notebook — fall back like an invalid response.
+    if (Array.isArray(parsed.cells) && parsed.cells.length > 0) {
+      cells = parsed.cells;
+    } else {
+      usedFallback = true;
+      cells = createFallbackCells(originalSource, language, fileName);
+    }
   } catch {
     // If AI response is not valid JSON, create a fallback notebook
+    usedFallback = true;
     cells = createFallbackCells(originalSource, language, fileName);
   }
 
@@ -249,6 +276,29 @@ function parseResponseToNotebook(
     }
   });
 
+  // Pre-existing explanations become VISIBLE markdown cells placed right
+  // after the code cell they match — previously they were only written into
+  // metadata.codeLearner.explanations and never shown anywhere.
+  const notebookCells: typeof validatedCells = [...validatedCells];
+  {
+    const explained = new Set<number>();
+    for (const exp of existingExplanations || []) {
+      const sig = (exp.snippet || '').split('\n')[0]?.trim() || '';
+      if (!sig) continue;
+      const idx = notebookCells.findIndex(c => c.cell_type === 'code' && c.source.join('').includes(sig));
+      if (idx < 0 || explained.has(idx)) continue;
+      explained.add(idx);
+      const mdSource = (exp.explanation || '').split('\n')
+        .map((line, li, arr) => li === arr.length - 1 ? line : line + '\n');
+      const mdCell = {
+        cell_type: 'markdown' as const,
+        metadata: { codeLearner: { explanationOf: idx } } as { [key: string]: unknown },
+        source: mdSource,
+      } as (typeof notebookCells)[number];
+      notebookCells.splice(idx + 1, 0, mdCell);
+    }
+  }
+
   // Build the notebook JSON
   const notebook: Record<string, unknown> = {
     nbformat: 4,
@@ -264,24 +314,30 @@ function parseResponseToNotebook(
         cellMapping: [],
       },
     },
-    cells: validatedCells,
+    cells: notebookCells,
   };
 
-  return JSON.stringify(notebook, null, 2);
+  return { json: JSON.stringify(notebook, null, 2), usedFallback };
 }
 
 function createFallbackCells(source: string, _language: string, _fileName: string): RawCell[] {
-  // Simple fallback: split by double newlines
-  const blocks = source.split(/\n\n+/);
+  // Simple fallback: split on 2+ consecutive blank lines, but KEEP the blank
+  // lines at the end of each block so the notebook preserves the original
+  // file's spacing (plain split() would discard them).
   const cells: RawCell[] = [];
-
-  for (const block of blocks) {
-    if (block.trim()) {
-      cells.push({
-        type: 'code',
-        source: [block + '\n'],
-      });
+  const re = /\n\n+/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(source)) !== null) {
+    const chunk = source.slice(last, m.index + m[0].length);
+    last = m.index + m[0].length;
+    if (chunk.trim()) {
+      cells.push({ type: 'code', source: [chunk] });
     }
+  }
+  const tail = source.slice(last);
+  if (tail.trim()) {
+    cells.push({ type: 'code', source: [tail] });
   }
 
   return cells;

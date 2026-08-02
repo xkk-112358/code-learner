@@ -66,6 +66,11 @@ export class OpenAIProvider implements AIProvider {
       for await (const data of parseSSEStream(response.body)) {
         try {
           const parsed = JSON.parse(data);
+          // Streamed error events (e.g. rate limits) must propagate — not be
+          // silently skipped like malformed payloads.
+          if (parsed.error) {
+            throw new Error(parsed.error.message || `OpenAI API error (${response.statusCode})`);
+          }
           const choices = parsed.choices;
           if (choices && choices.length > 0) {
             const delta = choices[0].delta;
@@ -76,15 +81,27 @@ export class OpenAIProvider implements AIProvider {
             }
 
             if (finishReason && finishReason !== 'null' && finishReason !== null) {
+              // Truncated output must not be treated as a complete result
+              // (and must not be cached) — surface it to the user instead.
+              if (finishReason === 'length') {
+                throw new Error('AI response was truncated by max_tokens. Increase codeLearner.maxTokens and retry.');
+              }
               break;
             }
           }
-        } catch {
-          continue;
+        } catch (e) {
+          // Only skip malformed SSE payloads (JSON.parse failures).
+          if (e instanceof SyntaxError) {
+            continue;
+          }
+          throw e;
         }
       }
     } catch (error) {
-      if (error instanceof Error && error.message === 'Request aborted') {
+      // Aborting destroys the socket, which surfaces as an arbitrary stream
+      // error (e.g. ECONNRESET) rather than 'Request aborted' — treat any
+      // error after an abort as a clean cancellation.
+      if (this.abortController?.signal.aborted || (error instanceof Error && error.message === 'Request aborted')) {
         return;
       }
       throw error;

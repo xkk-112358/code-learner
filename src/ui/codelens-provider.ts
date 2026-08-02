@@ -34,7 +34,9 @@ interface PersistedExp {
 }
 
 let pairIdCounter = 0;
-function genPairId(): string { return 'qa_' + (++pairIdCounter); }
+// Timestamp prefix keeps ids unique across extension restarts (the counter
+// resets to 0 on reload, which previously collided with persisted Q&A ids).
+function genPairId(): string { return 'qa_' + Date.now().toString(36) + '_' + (++pairIdCounter); }
 
 function makeFP(text: string): string {
   return text.split('\n')[0]?.trim().replace(/\s+/g, '').slice(0, 60).toLowerCase() || '';
@@ -50,6 +52,12 @@ export function registerFilePair(fileA: string, fileB: string): void {
     filePairs.get(from)!.add(to);
   };
   add(fileA, fileB); add(fileB, fileA);
+  pairsChanged = true;
+}
+
+export function unregisterFilePair(fileA: string, fileB: string): void {
+  filePairs.get(fileA)?.delete(fileB);
+  filePairs.get(fileB)?.delete(fileA);
   pairsChanged = true;
 }
 
@@ -162,7 +170,21 @@ export class CodeLearnerCodeLensProvider implements vscode.CodeLensProvider {
     }
   }
 
-  private async save(): Promise<void> {
+  private saveQueue: Promise<void> = Promise.resolve();
+
+  /**
+   * Persist data. Writes are serialized through a promise chain: concurrent
+   * fs.writeFile calls (e.g. a fire-and-forget sync save racing a command-path
+   * save) have no completion-order guarantee, so an older snapshot could
+   * otherwise overwrite a newer one.
+   */
+  private save(): Promise<void> {
+    const next = this.saveQueue.then(() => this.writeToDisk());
+    this.saveQueue = next.catch(() => { /* errors are reported in writeToDisk */ });
+    return next;
+  }
+
+  private async writeToDisk(): Promise<void> {
     const savePath = getSavePath();
     if (!savePath) return;
     try {
@@ -206,15 +228,20 @@ export class CodeLearnerCodeLensProvider implements vscode.CodeLensProvider {
   private _store(filePath: string, range: vscode.Range, explanation: string, anchorText?: string, codeSnippet?: string, timing?: ExplanationTiming): void {
     if (!this.data.has(filePath)) this.data.set(filePath, []);
     const list = this.data.get(filePath)!;
-    const fp = makeFP(codeSnippet || '');
+    // Fall back to the anchor text so entries without a code snippet (e.g. Q&A
+    // answers) still get a fingerprint and remain reachable/removable.
+    const fp = makeFP(codeSnippet || '') || makeFP(anchorText || '');
+    const old = list.find(e => e.fingerprint === fp);
     const toKeep = list.filter(e => e.fingerprint !== fp);
-    for (const old of list) { if (!toKeep.includes(old)) this.removeDeco(old.tagKey); }
+    for (const e of list) { if (!toKeep.includes(e)) this.removeDeco(e.tagKey); }
 
     const anchor: string = anchorText || (codeSnippet || '').split('\n')[0]?.trim() || '';
     const tagKey = `${filePath}::${fp}`;
     toKeep.push({
       fingerprint: fp, codeSnippet: codeSnippet || '', explanation,
-      tagKey, anchorText: anchor, qas: [],
+      tagKey, anchorText: anchor,
+      // Preserve existing Q&A when re-explaining the same code.
+      qas: old?.qas || [],
       posLine: range.end.line, posCol: range.end.character,
       timing,
     });
@@ -281,7 +308,7 @@ export class CodeLearnerCodeLensProvider implements vscode.CodeLensProvider {
     if (entry) { entry.deco.dispose(); this.decoMap.delete(tagKey); }
   }
 
-  getExplanation(uri: vscode.Uri, _line: number, lineText?: string): AIExplanation | undefined {
+  getExplanation(uri: vscode.Uri, line: number, lineText?: string): AIExplanation | undefined {
     const key = storageKey(uri);
     // 1) Try exact file + paired files with content matching
     for (const checkKey of [key, ...getPairedPaths(key)]) {
@@ -290,9 +317,20 @@ export class CodeLearnerCodeLensProvider implements vscode.CodeLensProvider {
         if (lineText) {
           const fp = makeFP(lineText);
           for (const exp of list) {
-            if (exp.fingerprint && (fp.includes(exp.fingerprint.slice(0, 30)) || exp.fingerprint.includes(fp.slice(0, 20)))) return exp;
+            // Prefer exact fingerprint equality over fuzzy containment to
+            // avoid mismatching two explanations with the same first line.
+            if (exp.fingerprint && (fp === exp.fingerprint || fp.includes(exp.fingerprint.slice(0, 30)) || exp.fingerprint.includes(fp.slice(0, 20)))) return exp;
           }
+          // Multi-line selections: the hovered line is the END of the
+          // selection while the stored fingerprint is from the FIRST line —
+          // fall back to position matching.
+          const byPos = list.find(e => e.posLine === line);
+          if (byPos) return byPos;
         } else {
+          // No line text (Q&A append/delete): prefer the explanation anchored
+          // at this line, falling back to the first entry.
+          const byPos = list.find(e => e.posLine === line);
+          if (byPos) return byPos;
           return list[0];
         }
       }
@@ -314,25 +352,51 @@ export class CodeLearnerCodeLensProvider implements vscode.CodeLensProvider {
   }
 
   async removeExplanation(filePath: string, line: number, fingerprint?: string): Promise<void> {
+    if (!fingerprint && line <= 0) {
+      // Delete-all (right-click "删除全部"): remove the current file's
+      // explanations AND their copies in paired files (same fingerprint) —
+      // otherwise the copies stay reachable through the paired-path lookup
+      // and the delete appears to do nothing. Entries unique to the paired
+      // file (different fingerprint, e.g. notebook-only content) are kept.
+      const list = this.data.get(filePath);
+      if (list) {
+        const fps = new Set(list.map(e => e.fingerprint));
+        for (const e of list) this.removeDeco(e.tagKey);
+        this.data.delete(filePath);
+        for (const paired of getPairedPaths(filePath)) {
+          const plist = this.data.get(paired);
+          if (!plist) continue;
+          const toRemove = plist.filter(e => e.fingerprint && fps.has(e.fingerprint));
+          for (const e of toRemove) this.removeDeco(e.tagKey);
+          const remaining = plist.filter(e => !toRemove.includes(e));
+          if (remaining.length > 0) this.data.set(paired, remaining); else this.data.delete(paired);
+        }
+      }
+      this.refresh(); await this.save();
+      return;
+    }
+    // Single-entry delete (fingerprint or posLine): also clean the paired
+    // copies of the same explanation.
     for (const fp of [filePath, ...getPairedPaths(filePath)]) {
       const list = this.data.get(fp);
       if (!list) continue;
       if (fingerprint) {
-        // Hover delete: match by fingerprint
-        const toRemove = list.filter(e => e.fingerprint === fingerprint);
+        // Hover delete: match by fingerprint. Multi-line selections store the
+        // fingerprint of the FIRST line but the 💡 (and hover) sits on the
+        // LAST line — when the fingerprint misses, fall back to posLine.
+        let toRemove = list.filter(e => e.fingerprint === fingerprint);
+        if (toRemove.length === 0) {
+          toRemove = list.filter(e => e.posLine === line);
+        }
         for (const e of toRemove) this.removeDeco(e.tagKey);
-        const remaining = list.filter(e => e.fingerprint !== fingerprint);
+        const remaining = list.filter(e => !toRemove.includes(e));
         if (remaining.length > 0) this.data.set(fp, remaining); else this.data.delete(fp);
-      } else if (line > 0) {
+      } else {
         // Fallback: match by posLine
         const toRemove = list.filter(e => e.posLine === line);
         for (const e of toRemove) this.removeDeco(e.tagKey);
         const remaining = list.filter(e => e.posLine !== line);
         if (remaining.length > 0) this.data.set(fp, remaining); else this.data.delete(fp);
-      } else {
-        // line=0, no fingerprint = delete all (right-click "全部删除")
-        for (const e of list) this.removeDeco(e.tagKey);
-        this.data.delete(fp);
       }
     }
     this.refresh(); await this.save();
@@ -347,15 +411,57 @@ export class CodeLearnerCodeLensProvider implements vscode.CodeLensProvider {
     return (this.data.get(filePath) || []).map(e => ({ explanation: e.explanation, snippet: e.codeSnippet, posLine: e.posLine }));
   }
 
-  /** Get ALL explanations across all stored files */
-  getAllExplanationsGlobal(): { explanation: string; snippet: string }[] {
-    const result: { explanation: string; snippet: string }[] = [];
-    for (const [_, exps] of this.data) {
+  /** Get ALL explanations across all stored files (with origin path). */
+  getAllExplanationsGlobal(): { explanation: string; snippet: string; filePath: string }[] {
+    const result: { explanation: string; snippet: string; filePath: string }[] = [];
+    for (const [filePath, exps] of this.data) {
       for (const exp of exps) {
-        result.push({ explanation: exp.explanation, snippet: exp.codeSnippet });
+        result.push({ explanation: exp.explanation, snippet: exp.codeSnippet, filePath });
       }
     }
     return result;
+  }
+
+  /**
+   * Move explanations from a renamed file to its new path, and update any
+   * registered file pairs accordingly.
+   *
+   * Only the data keyed by `oldPath` itself is migrated — explanations stored
+   * under paired paths (e.g. the old .ipynb) are left untouched, since that
+   * file still exists on disk.
+   */
+  async renameExplanations(oldPath: string, newPath: string): Promise<void> {
+    if (oldPath === newPath) return;
+    let changed = false;
+
+    const exps = this.data.get(oldPath);
+    if (exps && exps.length > 0) {
+      for (const e of exps) this.removeDeco(e.tagKey);
+      const migrated = exps.map(e => ({ ...e, tagKey: e.tagKey.replace(oldPath, newPath) }));
+      const existing = this.data.get(newPath);
+      this.data.set(newPath, existing ? existing.concat(migrated) : migrated);
+      this.data.delete(oldPath);
+      for (const e of migrated) this.addDeco(newPath, e.posLine, e.posCol, e.tagKey, e.anchorText);
+      changed = true;
+    }
+
+    // Rewrite explicit pairs to point at the new path.
+    const migratedPairs = new Map<string, Set<string>>();
+    let pairsChanged = false;
+    for (const [from, toSet] of filePairs) {
+      const newFrom = from === oldPath ? newPath : from;
+      const newTo = new Set<string>();
+      for (const to of toSet) newTo.add(to === oldPath ? newPath : to);
+      if (newTo.size > 0) migratedPairs.set(newFrom, newTo);
+      pairsChanged = pairsChanged || newFrom !== from;
+    }
+    if (pairsChanged) {
+      filePairs.clear();
+      for (const [k, v] of migratedPairs) filePairs.set(k, v);
+      changed = true;
+    }
+
+    if (changed) { this.refresh(); await this.save(); }
   }
 
   async copyExplanations(sourcePath: string, targetPath: string): Promise<void> {
@@ -384,8 +490,12 @@ export class CodeLearnerCodeLensProvider implements vscode.CodeLensProvider {
    * explanations survive a delete→undo round-trip in storage.
    */
   syncExplanationsWithDocument(document: vscode.TextDocument): void {
-    const filePath = document.uri.scheme === 'file' ? document.uri.fsPath : document.uri.toString();
+    // storageKey (not uri.toString()) so notebook-cell documents map to the
+    // same .ipynb path the explanations are stored under — the decoration
+    // path uses storageKey, and both must agree for notebook sync to work.
+    const filePath = storageKey(document.uri);
     const fullText = document.getText();
+    let changed = false;
 
     // Check active explanations
     const active = this.data.get(filePath);
@@ -404,7 +514,7 @@ export class CodeLearnerCodeLensProvider implements vscode.CodeLensProvider {
         this.data.set(filePath, stillValid);
         const existing = this.deletedExplanations.get(filePath) || [];
         this.deletedExplanations.set(filePath, [...existing, ...orphaned]);
-        this.refresh();
+        changed = true;
       }
     }
 
@@ -432,9 +542,12 @@ export class CodeLearnerCodeLensProvider implements vscode.CodeLensProvider {
         } else {
           this.deletedExplanations.delete(filePath);
         }
-        this.refresh();
+        changed = true;
       }
     }
+
+    // Persist so delete→undo state survives restarts.
+    if (changed) { this.refresh(); void this.save(); }
   }
 
   async dispose(): Promise<void> {
