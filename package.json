@@ -2,10 +2,13 @@
   "name": "code-learner",
   "displayName": "Code Learner",
   "description": "Open any code file as a Jupyter notebook with AI-powered cell explanations",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "code-learner",
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/xkk-112358/code-learner.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xkk-112358/code-learner.git"
+  },
   "icon": "tb.jpg",
   "engines": {
     "vscode": "^1.85.0"
@@ -16,7 +19,13 @@
     "Machine Learning"
   ],
   "keywords": [
-    "jupyter", "notebook", "learn", "code", "explain", "ai", "ipynb"
+    "jupyter",
+    "notebook",
+    "learn",
+    "code",
+    "explain",
+    "ai",
+    "ipynb"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -119,7 +128,10 @@
       "properties": {
         "codeLearner.provider": {
           "type": "string",
-          "enum": ["openai", "claude"],
+          "enum": [
+            "openai",
+            "claude"
+          ],
           "default": "openai",
           "description": "AI provider for code explanations"
         },
