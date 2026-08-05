@@ -21,6 +21,7 @@
 - 📦 **自动分块** — 按函数、类、导入块自动分割，也支持 `# %%` / `// %%` 手动标记
 - 🤖 **双 AI 提供商** — OpenAI 兼容 API（含 Azure、Ollama）+ Anthropic Claude
 - 🌐 **中英讲解** — 跟随 VS Code 语言设置自动切换
+- 📖 **悬停翻译** — 中文界面下悬浮英文 API 文档，一键 AI 翻译为中文；译文按内容哈希全局缓存，换文件、重启 VS Code 后直接显示，代码/参数名/URL 绝不误翻
 - ⚡ **流式响应** — AI 解释逐字实时输出
 - 💡 **三种交互** — CodeLens / 悬停弹窗 / 侧边栏，支持追问互动
 - 💾 **智能缓存** — LRU 缓存避免重复调用，节省费用
@@ -59,6 +60,10 @@
 转换后的 Notebook 保留了原始代码结构，可按单元格浏览。
 
 ![Notebook 结果](https://raw.githubusercontent.com/xkk-112358/code-learner-/main/pictures/5.png)
+
+**6. 翻译悬停文档**
+
+中文界面下，悬浮英文 API 符号（如 Python 的 docstring），点击悬浮窗中的「🌐 翻译为中文」，AI 立即将英文文档翻译为中文；译文支持「🔙 隐藏翻译」「🔄 重新翻译」，并全局缓存——任何文件、任何位置、重启 VS Code 后都直接显示相同译文。
 
 ### 📋 命令
 
@@ -99,6 +104,7 @@
 - 📦 **Auto-split** — Detect functions, classes, imports; also supports `# %%` / `// %%` manual markers
 - 🤖 **Dual AI** — OpenAI-compatible APIs (Azure, Ollama) + Anthropic Claude
 - 🌐 **Bilingual** — Auto-switch between Chinese and English
+- 📖 **Hover translation** — with a Chinese UI, one-click AI translation of English API docs in the hover; translations are globally cached by content hash (any file, any position, after restart) and code/parameter names/URLs are never mistranslated
 - ⚡ **Streaming** — Real-time AI output character by character
 - 💡 **3 UI modes** — CodeLens / Hover popup / Sidebar, with follow-up Q&A
 - 💾 **Smart cache** — LRU cache saves API calls and costs
@@ -137,6 +143,10 @@ Click **Open as Jupyter Notebook** at the top of the editor to convert your code
 The converted notebook preserves the original code structure for cell-by-cell browsing.
 
 ![Notebook Result](https://raw.githubusercontent.com/xkk-112358/code-learner-/main/pictures/5.png)
+
+**6. Translate Hover Docs**
+
+With a Chinese UI, hover over an English API symbol (e.g. a Python docstring) and click "🌐 Translate to Chinese" — the AI translates the documentation instantly. The translation supports "Hide Translation" / "Re-translate" and is cached globally: any file, any position, even after restarting VS Code shows the same translation.
 
 ### 📋 Commands
 
