@@ -10,6 +10,7 @@ import { CodeLearnerSettings } from './config/settings';
 import { CodeLearnerCodeLensProvider } from './ui/codelens-provider';
 import { AIHoverProvider } from './ui/hover-provider';
 import { ExplanationCache } from './ai/cache';
+import { HoverTranslationStore } from './utils/hover-translation-store';
 
 // ── Singletons ──────────────────────────────────────────
 
@@ -18,6 +19,7 @@ let _codeLearnerSettings: CodeLearnerSettings | undefined;
 let _codelensProvider: CodeLearnerCodeLensProvider | undefined;
 let _aiHover: AIHoverProvider | undefined;
 let _cache: ExplanationCache | undefined;
+let _hoverTranslationStore: HoverTranslationStore | undefined;
 
 // ── Operation lock ──────────────────────────────────────
 
@@ -68,6 +70,7 @@ export function getAIServiceManager(): AIServiceManager | undefined { return _ai
 export function getCodeLearnerSettings(): CodeLearnerSettings | undefined { return _codeLearnerSettings; }
 export function getCodeLensProvider(): CodeLearnerCodeLensProvider | undefined { return _codelensProvider; }
 export function getAIHover(): AIHoverProvider | undefined { return _aiHover; }
+export function getHoverTranslationStore(): HoverTranslationStore | undefined { return _hoverTranslationStore; }
 
 // ── Setters ─────────────────────────────────────────────
 
@@ -75,6 +78,7 @@ export function initState(context: vscode.ExtensionContext): void {
   _cache = new ExplanationCache();
   _codeLearnerSettings = new CodeLearnerSettings(context.secrets);
   _aiServiceManager = new AIServiceManager(_codeLearnerSettings, _cache);
+  _hoverTranslationStore = new HoverTranslationStore();
 }
 
 export function setCodeLensProvider(p: CodeLearnerCodeLensProvider): void { _codelensProvider = p; }

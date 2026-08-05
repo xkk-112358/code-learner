@@ -28,6 +28,9 @@
     "ipynb"
   ],
   "main": "./out/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
     "commands": [
       {
@@ -87,6 +90,14 @@
       {
         "command": "code-learner.copyExplanation",
         "title": "%code-learner.copyExplanation%"
+      },
+      {
+        "command": "code-learner.translateHover",
+        "title": "%code-learner.translateHover%"
+      },
+      {
+        "command": "code-learner.showOriginalHover",
+        "title": "%code-learner.showOriginalHover%"
       }
     ],
     "menus": {
@@ -120,6 +131,16 @@
         {
           "command": "code-learner.explainCellBelow",
           "group": "code-learner@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "code-learner.translateHover",
+          "when": "false"
+        },
+        {
+          "command": "code-learner.showOriginalHover",
+          "when": "false"
         }
       ]
     },
@@ -157,7 +178,7 @@
         },
         "codeLearner.maxTokens": {
           "type": "integer",
-          "default": 2000,
+          "default": 5000,
           "minimum": 500,
           "maximum": 8000,
           "description": "Maximum tokens per AI explanation"

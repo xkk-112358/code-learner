@@ -75,8 +75,8 @@
 |------|--------|------|
 | `codeLearner.provider` | `openai` | AI 提供商 |
 | `codeLearner.openaiModel` | `gpt-4o-mini` | OpenAI 模型 |
-| `codeLearner.claudeModel` | `claude-sonnet-4-20250514` | Claude 模型 |
-| `codeLearner.maxTokens` | `2000` | 每次最大 token 数 |
+| `codeLearner.claudeModel` | `claude-sonnet-5` | Claude 模型 |
+| `codeLearner.maxTokens` | `5000` | 每次最大 token 数 |
 | `codeLearner.temperature` | `0.3` | AI 温度 |
 | `codeLearner.cacheEnabled` | `true` | 启用缓存 |
 
@@ -153,8 +153,8 @@ The converted notebook preserves the original code structure for cell-by-cell br
 |---------|---------|-------------|
 | `codeLearner.provider` | `openai` | AI provider |
 | `codeLearner.openaiModel` | `gpt-4o-mini` | OpenAI model |
-| `codeLearner.claudeModel` | `claude-sonnet-4-20250514` | Claude model |
-| `codeLearner.maxTokens` | `2000` | Max tokens per explanation |
+| `codeLearner.claudeModel` | `claude-sonnet-5` | Claude model |
+| `codeLearner.maxTokens` | `5000` | Max tokens per explanation |
 | `codeLearner.temperature` | `0.3` | AI temperature |
 | `codeLearner.cacheEnabled` | `true` | Enable cache |
 
@@ -168,7 +168,7 @@ The converted notebook preserves the original code structure for cell-by-cell br
 
 <div align="center">
 
-**MIT License** · VS Code ^1.85.0 · v0.2.0
+**MIT License** · VS Code ^1.85.0 · v0.3.0
 
  Made By: xkk-112358
 

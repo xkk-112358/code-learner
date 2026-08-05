@@ -4,20 +4,11 @@
  */
 
 import { CodeCell } from '../parser/cell';
+import { contentHash } from '../utils/hash';
 
 interface CacheEntry {
   explanation: string;
   timestamp: number;
-}
-
-/** Stable content hash (FNV-1a) — used to keep cache keys in sync with cell content. */
-function contentHash(text: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(36);
 }
 
 export class ExplanationCache {

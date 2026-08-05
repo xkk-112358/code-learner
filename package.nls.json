@@ -12,5 +12,7 @@
   "code-learner.deleteQA": "Delete Q&A",
   "code-learner.askQuestion": "Ask About Code",
   "code-learner.toComment": "Convert to Comment",
-  "code-learner.copyExplanation": "Copy Explanation"
+  "code-learner.copyExplanation": "Copy Explanation",
+  "code-learner.translateHover": "Translate Hover to Chinese",
+  "code-learner.showOriginalHover": "Show Original Hover"
 }

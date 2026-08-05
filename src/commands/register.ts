@@ -9,6 +9,7 @@ import { openAsNotebook } from './notebook-commands';
 import { explainSelectedCode, explainNotebookCell, askQuestion } from './explain-commands';
 import { reExplain, deleteExplanation, copyQA, deleteQA, toComment, deleteAtCursor,copyExplanation } from './manage-commands';
 import { convertAllToComments } from './comment-commands';
+import { translateHover, showOriginalHover } from './hover-commands';
 import { CodeLearnerCodeLensProvider } from '../ui/codelens-provider';
 
 export function registerAllCommands(
@@ -112,6 +113,23 @@ export function registerAllCommands(
     vscode.commands.registerCommand(
       'code-learner.copyExplanation',
       (uri: vscode.Uri, line: number) => copyExplanation(uri, line)
+    )
+  );
+
+  // ── Hover translation buttons ─────────────────────────
+  // Not wrapped in withLock: translation is a side action with per-hash
+  // in-flight dedup instead (see hover-commands.ts).
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'code-learner.translateHover',
+      (uri: vscode.Uri, line: number, char: number, hash: string, force?: boolean) => translateHover(uri, line, char, hash, force)
+    )
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'code-learner.showOriginalHover',
+      (uri: vscode.Uri, line: number, char: number, hash: string) => showOriginalHover(uri, line, char, hash)
     )
   );
 

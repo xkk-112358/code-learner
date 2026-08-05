@@ -8,7 +8,8 @@
  */
 
 import * as vscode from 'vscode';
-import { initState, setCodeLensProvider, setAIHover } from './state';
+import * as path from 'path';
+import { initState, setCodeLensProvider, setAIHover, getHoverTranslationStore } from './state';
 import { registerAllCommands } from './commands/register';
 import { CodeLearnerCodeLensProvider, setStoragePath } from './ui/codelens-provider';
 import { AIHoverProvider } from './ui/hover-provider';
@@ -35,14 +36,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     codelensProvider.applyAllDecorations(ed);
   }
 
-  // 5. Create and register the hover provider
-  const aiHover = new AIHoverProvider(codelensProvider);
+  // 5. Load persisted hover translations BEFORE registering the hover
+  // provider, so restarted sessions show cached translations immediately.
+  const hoverStore = getHoverTranslationStore();
+  if (hoverStore && context.globalStorageUri) {
+    await hoverStore.init(path.join(context.globalStorageUri.fsPath, 'hover-translations.json'));
+  }
+
+  // 6. Create and register the hover provider
+  const aiHover = new AIHoverProvider(codelensProvider, hoverStore);
   setAIHover(aiHover);
   context.subscriptions.push(
     vscode.languages.registerHoverProvider({ pattern: '**' }, aiHover)
   );
 
-  // 6. Register all commands, event handlers, and status bar
+  // 7. Register all commands, event handlers, and status bar
   registerAllCommands(context, codelensProvider);
 }
 

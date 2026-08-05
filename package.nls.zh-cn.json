@@ -12,5 +12,7 @@
   "code-learner.deleteQA": "删除问答",
   "code-learner.askQuestion": "提问代码",
   "code-learner.toComment": "转为注释",
-  "code-learner.copyExplanation": "复制解释"
+  "code-learner.copyExplanation": "复制解释",
+  "code-learner.translateHover": "将悬停文档翻译为中文",
+  "code-learner.showOriginalHover": "隐藏翻译"
 }
