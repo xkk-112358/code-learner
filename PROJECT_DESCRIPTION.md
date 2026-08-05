@@ -8,4 +8,4 @@ Learn code like reading a Jupyter notebook. Auto-splits code into logical cells,
 
 ---
 
-**License**: MIT | **VS Code**: ^1.85.0 | **Version**: 0.4.0
+**License**: MIT | **VS Code**: ^1.85.0 | **Version**: 0.5.0

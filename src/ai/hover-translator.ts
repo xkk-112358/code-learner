@@ -10,21 +10,112 @@
 
 import { CodeLearnerSettings } from '../config/settings';
 import { nodeRequestAndRead } from './streaming';
+import { contentHash } from '../utils/hash';
 
 export const MIN_TRANSLATABLE_CHARS = 40;
 export const MAX_TRANSLATABLE_CHARS = 20_000;
 
 /** CJK Unified Ideographs + Extension A — presence means "already Chinese". */
 const CJK_RE = /[一-鿿㐀-䶿]/;
+/** Hiragana + Katakana — presence means "already Japanese". */
+const KANA_RE = /[぀-ヿ]/;
+/** Hangul syllables — presence means "already Korean". */
+const HANGUL_RE = /[가-힯]/;
+
+/** Script-encoded targets (languages whose text can be detected by script). */
+interface LangInfo {
+  /** English name used in the AI prompt, e.g. 'Simplified Chinese' */
+  name: string;
+  /** Native button labels; falls back to English labels when absent */
+  native?: { translate: string; show: string; hide: string; retranslate: string };
+  /** Regex detecting text already written in this language's script */
+  script?: RegExp;
+}
+
+const LANGS: Record<string, LangInfo> = {
+  zh: { name: 'Simplified Chinese', native: { translate: '翻译为中文', show: '显示译文', hide: '隐藏翻译', retranslate: '重新翻译' }, script: CJK_RE },
+  ja: { name: 'Japanese', native: { translate: '日本語に翻訳', show: '翻訳を表示', hide: '翻訳を隠す', retranslate: '再翻訳' }, script: KANA_RE },
+  ko: { name: 'Korean', native: { translate: '한국어로 번역', show: '번역 표시', hide: '번역 숨기기', retranslate: '다시 번역' }, script: HANGUL_RE },
+  fr: { name: 'French', native: { translate: 'Traduire en français', show: 'Afficher la traduction', hide: 'Masquer la traduction', retranslate: 'Retraduire' } },
+  de: { name: 'German', native: { translate: 'Auf Deutsch übersetzen', show: 'Übersetzung anzeigen', hide: 'Übersetzung ausblenden', retranslate: 'Erneut übersetzen' } },
+  es: { name: 'Spanish', native: { translate: 'Traducir al español', show: 'Mostrar traducción', hide: 'Ocultar traducción', retranslate: 'Volver a traducir' } },
+  it: { name: 'Italian', native: { translate: 'Traduci in italiano', show: 'Mostra traduzione', hide: 'Nascondi traduzione', retranslate: 'Ritraduci' } },
+  pt: { name: 'Portuguese', native: { translate: 'Traduzir para português', show: 'Mostrar tradução', hide: 'Ocultar tradução', retranslate: 'Retraduzir' } },
+  ru: { name: 'Russian', native: { translate: 'Перевести на русский', show: 'Показать перевод', hide: 'Скрыть перевод', retranslate: 'Перевести заново' } },
+  uk: { name: 'Ukrainian' },
+  nl: { name: 'Dutch' },
+  pl: { name: 'Polish' },
+  tr: { name: 'Turkish' },
+  vi: { name: 'Vietnamese' },
+  th: { name: 'Thai' },
+  ar: { name: 'Arabic' },
+  hi: { name: 'Hindi' },
+  id: { name: 'Indonesian' },
+  cs: { name: 'Czech' },
+  sv: { name: 'Swedish' },
+  da: { name: 'Danish' },
+  fi: { name: 'Finnish' },
+  el: { name: 'Greek' },
+  hu: { name: 'Hungarian' },
+  ro: { name: 'Romanian' },
+};
+
+export interface TranslationTarget {
+  /** Language code used in cache keys, e.g. 'zh', 'ja' */
+  code: string;
+  /** English name for the AI prompt, e.g. 'Simplified Chinese' */
+  name: string;
+  translate: string;
+  show: string;
+  hide: string;
+  retranslate: string;
+  /** True when the text already contains this language's script */
+  isTargetScript(text: string): boolean;
+}
 
 /**
- * Whether hover text is worth translating: substantial length, no CJK
- * (already Chinese), at least one Latin letter, and not mostly code.
+ * Resolve the translation target from the VS Code UI language.
+ * Returns undefined for English UIs (nothing to translate into) and for
+ * unknown locales (no button).
  */
-export function isTranslatable(text: string): boolean {
+export function resolveTranslationTarget(uiLang: string): TranslationTarget | undefined {
+  const base = (uiLang || '').split('-')[0].toLowerCase();
+  const info = LANGS[base];
+  if (!info) return undefined;
+  const native = info.native ?? {
+    translate: `Translate to ${info.name}`,
+    show: 'Show translation',
+    hide: 'Hide translation',
+    retranslate: 'Re-translate',
+  };
+  return {
+    code: base,
+    name: info.name,
+    translate: native.translate,
+    show: native.show,
+    hide: native.hide,
+    retranslate: native.retranslate,
+    isTargetScript: info.script ? (text: string) => info.script!.test(text) : () => false,
+  };
+}
+
+/**
+ * Cache key for a translation: content hash of the target language + text,
+ * so the same document translated into different languages never collides.
+ */
+export function makeTranslationKey(targetCode: string, text: string): string {
+  return contentHash(`${targetCode}:${text}`);
+}
+
+/**
+ * Whether hover text is worth translating: substantial length, not already
+ * written in the target language's script, at least one Latin letter, and
+ * not mostly code.
+ */
+export function isTranslatable(text: string, target?: TranslationTarget): boolean {
   const t = text.trim();
   if (t.length < MIN_TRANSLATABLE_CHARS || t.length > MAX_TRANSLATABLE_CHARS) return false;
-  if (CJK_RE.test(t)) return false;
+  if (target && target.isTargetScript(t)) return false; // already in target language
   if (!/[a-zA-Z]/.test(t)) return false;
   const backticks = (t.match(/`/g) || []).length;
   if (backticks / t.length > 0.4) return false; // looks like pure code
@@ -71,10 +162,10 @@ export function restorePlaceholders(translated: string, map: Map<string, string>
 }
 
 /**
- * Translate English API documentation to Simplified Chinese (non-streaming).
+ * Translate English API documentation into the target language (non-streaming).
  * @throws Error when no API key is configured or the API call fails.
  */
-export async function translateHoverText(en: string, settings: CodeLearnerSettings): Promise<string> {
+export async function translateHoverText(en: string, settings: CodeLearnerSettings, target: TranslationTarget): Promise<string> {
   const config = settings.getConfig();
   const apiKey = await settings.getApiKey(config.provider);
   if (!apiKey) {
@@ -82,16 +173,16 @@ export async function translateHoverText(en: string, settings: CodeLearnerSettin
   }
   const system = [
     'You are a professional API documentation translator. Translate the given English',
-    'API documentation into Simplified Chinese.',
+    `API documentation into ${target.name}.`,
     'Rules:',
     '1. Keep all Markdown structure (headings, lists, bold, code fences as-is)',
     '2. Keep the placeholder tokens {C0}, {I0}, {U0}, ... exactly as they appear',
     '3. Do NOT translate code, identifiers, parameter names, type names, URLs, or file paths',
-    '4. Technical terms may keep the English with Chinese in parentheses, e.g. padding（内边距）',
+    '4. Technical terms may keep the English with the translation in parentheses',
     '5. Output ONLY the translation — no explanations, no preamble',
     '6. Keep each placeholder on its own line/paragraph as in the source — do NOT wrap placeholders in emphasis, italics, bold, or code markers, and do not merge them into other lines',
   ].join('\n');
-  const user = `Translate this English API documentation to Simplified Chinese:\n\n${en}`;
+  const user = `Translate this English API documentation to ${target.name}:\n\n${en}`;
 
   // Chinese output costs roughly 2-3 tokens per character — budget the answer
   // by source length * 2.5, or the configured maxTokens, whichever is larger.

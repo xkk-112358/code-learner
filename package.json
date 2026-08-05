@@ -2,7 +2,7 @@
   "name": "code-learner",
   "displayName": "Code Learner",
   "description": "Open any code file as a Jupyter notebook with AI-powered cell explanations",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "code-learner",
   "license": "MIT",
   "repository": {

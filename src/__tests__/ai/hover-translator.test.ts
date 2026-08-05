@@ -3,6 +3,8 @@ import {
   isTranslatable,
   extractPlaceholders,
   restorePlaceholders,
+  makeTranslationKey,
+  resolveTranslationTarget,
   MIN_TRANSLATABLE_CHARS,
   MAX_TRANSLATABLE_CHARS,
 } from '../../ai/hover-translator';
@@ -25,8 +27,17 @@ describe('isTranslatable', () => {
     expect(isTranslatable('x'.repeat(MAX_TRANSLATABLE_CHARS + 1))).toBe(false);
   });
 
-  it('rejects text that already contains Chinese', () => {
-    expect(isTranslatable('调整子图之间的填充距离。 '.repeat(5))).toBe(false);
+  it('rejects text that already contains Chinese (zh target)', () => {
+    const zh = resolveTranslationTarget('zh-cn')!;
+    expect(isTranslatable('调整子图之间的填充距离。 '.repeat(5), zh)).toBe(false);
+  });
+
+  it('rejects text already written in the target script (ja / ko)', () => {
+    const ja = resolveTranslationTarget('ja')!;
+    expect(isTranslatable('これは日本語のテキストです。 '.repeat(4), ja)).toBe(false);
+    expect(isTranslatable('This is English text. '.repeat(3), ja)).toBe(true);
+    const ko = resolveTranslationTarget('ko')!;
+    expect(isTranslatable('이것은 한국어 텍스트입니다. '.repeat(4), ko)).toBe(false);
   });
 
   it('rejects text without Latin letters', () => {
@@ -83,6 +94,50 @@ describe('extractPlaceholders', () => {
     const { text, map } = extractPlaceholders(src);
     expect(text).toBe(src);
     expect(map.size).toBe(0);
+  });
+});
+
+describe('resolveTranslationTarget', () => {
+  it('maps zh-cn to the Chinese target with native labels', () => {
+    const t = resolveTranslationTarget('zh-cn')!;
+    expect(t.code).toBe('zh');
+    expect(t.name).toBe('Simplified Chinese');
+    expect(t.translate).toBe('翻译为中文');
+    expect(t.show).toBe('显示译文');
+    expect(t.hide).toBe('隐藏翻译');
+    expect(t.retranslate).toBe('重新翻译');
+  });
+
+  it('maps ja and fr with native labels', () => {
+    const ja = resolveTranslationTarget('ja')!;
+    expect(ja.name).toBe('Japanese');
+    expect(ja.translate).toBe('日本語に翻訳');
+    const fr = resolveTranslationTarget('fr-FR')!;
+    expect(fr.name).toBe('French');
+    expect(fr.translate).toBe('Traduire en français');
+  });
+
+  it('falls back to English labels for languages without native labels', () => {
+    const t = resolveTranslationTarget('id')!;
+    expect(t.name).toBe('Indonesian');
+    expect(t.translate).toBe('Translate to Indonesian');
+    expect(t.hide).toBe('Hide translation');
+  });
+
+  it('returns undefined for English UIs and unknown locales', () => {
+    expect(resolveTranslationTarget('en')).toBeUndefined();
+    expect(resolveTranslationTarget('en-US')).toBeUndefined();
+    expect(resolveTranslationTarget('xx')).toBeUndefined();
+  });
+});
+
+describe('makeTranslationKey', () => {
+  it('differs per target language for the same text', () => {
+    expect(makeTranslationKey('zh', 'doc text')).not.toBe(makeTranslationKey('ja', 'doc text'));
+  });
+
+  it('is stable for the same language and text', () => {
+    expect(makeTranslationKey('zh', 'doc text')).toBe(makeTranslationKey('zh', 'doc text'));
   });
 });
 

@@ -7,8 +7,13 @@
 import * as vscode from 'vscode';
 import { CodeLearnerCodeLensProvider } from './codelens-provider';
 import { HoverTranslationStore } from '../utils/hover-translation-store';
-import { contentHash } from '../utils/hash';
-import { extractPlaceholders, isTranslatable, restorePlaceholders } from '../ai/hover-translator';
+import {
+  extractPlaceholders,
+  isTranslatable,
+  makeTranslationKey,
+  resolveTranslationTarget,
+  restorePlaceholders,
+} from '../ai/hover-translator';
 import { t } from '../utils/helpers';
 
 /**
@@ -124,15 +129,15 @@ export class AIHoverProvider implements vscode.HoverProvider {
       }
     }
 
-    // ── Block B: hover documentation translation (Chinese UI only) ──
+    // ── Block B: hover documentation translation (follows the UI language) ──
     let translationBlock: string | null = null;
-    const locale = vscode.env.language;
-    if (locale.startsWith('zh') && this.store) {
+    const target = resolveTranslationTarget(vscode.env.language);
+    if (target && this.store) {
       const builtin = await fetchBuiltinHoverText(document.uri, position);
       if (builtin) {
         const { text, map } = extractPlaceholders(builtin);
-        if (isTranslatable(text)) {
-          const hash = contentHash(text);
+        if (isTranslatable(text, target)) {
+          const hash = makeTranslationKey(target.code, text);
           if (this.store.isShown(hash)) {
             const entry = this.store.get(hash);
             if (entry) {
@@ -145,15 +150,15 @@ export class AIHoverProvider implements vscode.HoverProvider {
               const zh = restorePlaceholders(sanitizeAiContent(entry.zh), map);
               const hideCmd = `command:code-learner.showOriginalHover?${encodeURIComponent(JSON.stringify([document.uri, position.line, position.character, hash]))}`;
               const retransCmd = `command:code-learner.translateHover?${encodeURIComponent(JSON.stringify([document.uri, position.line, position.character, hash, true]))}`;
-              translationBlock = `\n\n---\n\n${zh}\n\n[🔙 ${t('隐藏翻译', 'Hide Translation')}](${hideCmd})  [🔄 ${t('重新翻译', 'Re-translate')}](${retransCmd})`;
+              translationBlock = `\n\n---\n\n${zh}\n\n[🔙 ${target.hide}](${hideCmd})  [🔄 ${target.retranslate}](${retransCmd})`;
             }
           }
           if (!translationBlock) {
-            // A translation exists but is hidden (用户点了"隐藏翻译") — clicking
-            // just reveals the cached text, so label it 显示译文. First-time
-            // translations keep 翻译为中文.
+            // A translation exists but is hidden (点了"隐藏翻译") — clicking
+            // just reveals the cached text, so label it "show". First-time
+            // translations keep the "translate" label.
             const cached = this.store.get(hash);
-            const label = cached ? t('显示译文', 'Show Translation') : t('翻译为中文', 'Translate to Chinese');
+            const label = cached ? target.show : target.translate;
             const cmd = `command:code-learner.translateHover?${encodeURIComponent(JSON.stringify([document.uri, position.line, position.character, hash]))}`;
             translationBlock = `\n\n---\n\n[🌐 ${label}](${cmd})`;
           }

@@ -12,8 +12,13 @@
 import * as vscode from 'vscode';
 import { getCodeLearnerSettings, getHoverTranslationStore } from '../state';
 import { fetchBuiltinHoverText } from '../ui/hover-provider';
-import { contentHash } from '../utils/hash';
-import { extractPlaceholders, isTranslatable, translateHoverText } from '../ai/hover-translator';
+import {
+  extractPlaceholders,
+  isTranslatable,
+  makeTranslationKey,
+  resolveTranslationTarget,
+  translateHoverText,
+} from '../ai/hover-translator';
 import { showError } from '../utils/error-utils';
 import { t } from '../utils/helpers';
 
@@ -81,7 +86,9 @@ export async function translateHover(uri: vscode.Uri, line: number, char: number
       return;
     }
 
-    const hash = contentHash(text);
+    const target = resolveTranslationTarget(vscode.env.language);
+    if (!target) return;
+    const hash = makeTranslationKey(target.code, text);
     let zh = store.get(hash)?.zh;
     if (forceRefresh || !zh) {
       const settings = getCodeLearnerSettings();
@@ -95,7 +102,7 @@ export async function translateHover(uri: vscode.Uri, line: number, char: number
         pending = Promise.resolve(
           vscode.window.withProgress(
             { location: vscode.ProgressLocation.Notification, title: t('正在翻译…', 'Translating…') },
-            () => translateHoverText(text, settings)
+            () => translateHoverText(text, settings, target)
           )
         ).finally(() => inflight.delete(inflightKey));
         inflight.set(inflightKey, pending);
