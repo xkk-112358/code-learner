@@ -168,7 +168,7 @@ The converted notebook preserves the original code structure for cell-by-cell br
 
 <div align="center">
 
-**MIT License** · VS Code ^1.85.0 · v0.3.0
+**MIT License** · VS Code ^1.85.0 · v0.4.0
 
  Made By: xkk-112358
 
