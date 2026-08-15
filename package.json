@@ -2,14 +2,14 @@
   "name": "code-learner",
   "displayName": "Code Learner",
   "description": "Open any code file as a Jupyter notebook with AI-powered cell explanations",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "publisher": "code-learner",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/xkk-112358/code-learner.git"
   },
-  "icon": "tb.jpg",
+  "icon": "favicon.jpg",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -194,6 +194,15 @@
           "type": "boolean",
           "default": true,
           "description": "Cache explanations"
+        },
+        "codeLearner.hoverCarrier": {
+          "type": "string",
+          "enum": [
+            "inlay-hint",
+            "decoration"
+          ],
+          "default": "inlay-hint",
+          "description": "How the 💡 AI explanation is attached: 'inlay-hint' shows ONLY the AI explanation on hover (the language server's hover is not merged in); 'decoration' uses the classic line-end 💡 whose hover is merged with the language server's hover"
         }
       }
     }

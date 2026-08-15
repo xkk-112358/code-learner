@@ -50,7 +50,8 @@ interface LanguageInfo {
 export async function generateNotebook(
   document: vscode.TextDocument,
   settings: CodeLearnerSettings,
-  existingExplanations?: StoredExplanation[]
+  existingExplanations?: StoredExplanation[],
+  signal?: AbortSignal
 ): Promise<ConversionResult> {
   const source = document.getText();
   const language = document.languageId;
@@ -68,7 +69,7 @@ export async function generateNotebook(
   const maxTokens = Math.min(16384, 4096 + Math.ceil(truncatedSource.length / 3));
 
   // Call AI and get the response
-  const response = await callAiForNotebook(prompt, settings, maxTokens);
+  const response = await callAiForNotebook(prompt, settings, maxTokens, signal);
 
   // Parse the AI response into .ipynb JSON
   const { json: notebookJson, usedFallback } = parseResponseToNotebook(response, source, language, fileName, existingExplanations);
@@ -107,7 +108,7 @@ Respond ONLY with valid JSON in this exact format (no markdown, no \`\`\`json):
 Do not include any text before or after the JSON.`;
 }
 
-async function callAiForNotebook(prompt: string, settings: CodeLearnerSettings, maxTokens: number): Promise<string> {
+async function callAiForNotebook(prompt: string, settings: CodeLearnerSettings, maxTokens: number, signal?: AbortSignal): Promise<string> {
   const config = settings.getConfig();
   const apiKey = await settings.getApiKey(config.provider);
 
@@ -116,9 +117,9 @@ async function callAiForNotebook(prompt: string, settings: CodeLearnerSettings, 
   }
 
   if (config.provider === 'openai') {
-    return callOpenAI(apiKey, config, prompt, maxTokens);
+    return callOpenAI(apiKey, config, prompt, maxTokens, signal);
   } else {
-    return callClaude(apiKey, config, prompt, maxTokens);
+    return callClaude(apiKey, config, prompt, maxTokens, signal);
   }
 }
 
@@ -126,7 +127,8 @@ async function callOpenAI(
   apiKey: string,
   config: import('../config/settings').CodeLearnerConfig,
   prompt: string,
-  maxTokens: number
+  maxTokens: number,
+  signal?: AbortSignal
 ): Promise<string> {
   const endpoint = config.openaiEndpoint.replace(/\/$/, '');
   const url = `${endpoint}/chat/completions`;
@@ -149,6 +151,7 @@ async function callOpenAI(
       'Authorization': 'Bearer ' + apiKey,
     },
     body,
+    signal,
   });
 
   if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -170,7 +173,8 @@ async function callClaude(
   apiKey: string,
   config: import('../config/settings').CodeLearnerConfig,
   prompt: string,
-  maxTokens: number
+  maxTokens: number,
+  signal?: AbortSignal
 ): Promise<string> {
   const endpoint = config.claudeEndpoint.replace(/\/$/, '');
   const url = `${endpoint}/v1/messages`;
@@ -191,6 +195,7 @@ async function callClaude(
       'anthropic-version': '2023-06-01',
     },
     body,
+    signal,
   });
 
   if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -276,28 +281,12 @@ function parseResponseToNotebook(
     }
   });
 
-  // Pre-existing explanations become VISIBLE markdown cells placed right
-  // after the code cell they match — previously they were only written into
-  // metadata.codeLearner.explanations and never shown anywhere.
+  // Pre-existing explanations are NOT inserted as visible markdown cells —
+  // the 💡 stays in the notebook (inlay hint carrier), and hovering it shows
+  // the AI explanation. They are only kept in metadata.codeLearner.explanations
+  // (and copied into the extension's store by openAsNotebook), never rendered
+  // as cells.
   const notebookCells: typeof validatedCells = [...validatedCells];
-  {
-    const explained = new Set<number>();
-    for (const exp of existingExplanations || []) {
-      const sig = (exp.snippet || '').split('\n')[0]?.trim() || '';
-      if (!sig) continue;
-      const idx = notebookCells.findIndex(c => c.cell_type === 'code' && c.source.join('').includes(sig));
-      if (idx < 0 || explained.has(idx)) continue;
-      explained.add(idx);
-      const mdSource = (exp.explanation || '').split('\n')
-        .map((line, li, arr) => li === arr.length - 1 ? line : line + '\n');
-      const mdCell = {
-        cell_type: 'markdown' as const,
-        metadata: { codeLearner: { explanationOf: idx } } as { [key: string]: unknown },
-        source: mdSource,
-      } as (typeof notebookCells)[number];
-      notebookCells.splice(idx + 1, 0, mdCell);
-    }
-  }
 
   // Build the notebook JSON
   const notebook: Record<string, unknown> = {

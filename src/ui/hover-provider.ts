@@ -14,6 +14,7 @@ import {
   resolveTranslationTarget,
   restorePlaceholders,
 } from '../ai/hover-translator';
+import { buildExplanationMarkdown } from './hover-content';
 import { t } from '../utils/helpers';
 
 /**
@@ -83,48 +84,19 @@ export class AIHoverProvider implements vscode.HoverProvider {
     const info = this.codelens.getExplanation(document.uri, position.line, lineText);
     let md: vscode.MarkdownString | null = null;
     if (info) {
-      // The anchor can be a long code fragment, so allow a small tolerance on
-      // the left, but never show it for positions to the right of the 💡 —
-      // otherwise hovering `plt.plot(x, y💡, 'bo', ...)` over `'bo'` would
-      // wrongly trigger.
+      // Only respond to the 💡 decoration character itself (decoPos = end of
+      // line). The old window tolerated 2 characters to the left, which meant
+      // the mouse resting on trailing code characters (e.g. `)` or an
+      // identifier) also triggered the AI explanation — at those positions the
+      // native language service (Pylance/TS) returns its own content too, and
+      // VS Code merges both into one hover popup. The line-end position is
+      // outside every symbol's token range, so native providers return
+      // nothing there and the popup shows only the AI explanation.
       const anchorIdx = lineText.indexOf(info.anchorText);
       if (anchorIdx >= 0) {
         const decoPos = anchorIdx + info.anchorText.length;
-        if (position.character >= decoPos - 2 && position.character <= decoPos + 1) {
-          md = new vscode.MarkdownString('', true);
-          md.isTrusted = true;
-
-          md.appendMarkdown(`--- 💡 ${t('AI 解析', 'AI Analysis')} ---`);
-          if (info.timing) {
-            const sec = (info.timing.elapsed / 1000).toFixed(1);
-            const tokens = Math.round(info.timing.chars / 4);
-            md.appendMarkdown(`(⏱ ${sec}s ·${tokens} tokens)`);
-          }
-          md.appendMarkdown('\n\n');
-          md.appendMarkdown(sanitizeAiContent(info.explanation) + '\n');
-
-          const fileUri = document.uri;
-          for (const qa of info.qas) {
-            md.appendMarkdown('\n\n---\n');
-            md.appendMarkdown(`**💬 Q:** ${sanitizeAiContent(qa.question)}\n\n`);
-            md.appendMarkdown(`**🤖 A:** ${sanitizeAiContent(qa.answer)}\n\n`);
-            const copyCmd = `command:code-learner.copyQA?${encodeURIComponent(JSON.stringify([qa.question, qa.answer]))}`;
-            const delCmd = `command:code-learner.deleteQA?${encodeURIComponent(JSON.stringify([fileUri, position.line, qa.id]))}`;
-            md.appendMarkdown(`[${t('复制', 'Copy')}](${copyCmd})  [🗑 ${t('删除', 'Delete')}](${delCmd})`);
-          }
-
-          md.appendMarkdown('\n\n---\n');
-          const reCmd = `command:code-learner.reExplain?${encodeURIComponent(JSON.stringify([fileUri, position.line, 0]))}`;
-          const delCmd = `command:code-learner.deleteExplanation?${encodeURIComponent(JSON.stringify([fileUri, position.line]))}`;
-          const askCmd = `command:code-learner.askQuestion?${encodeURIComponent(JSON.stringify([fileUri, position.line, 0]))}`;
-          const copyCmdExp = `command:code-learner.copyExplanation?${encodeURIComponent(JSON.stringify([fileUri, position.line]))}`;
-          const cmtCmd = `command:code-learner.toComment?${encodeURIComponent(JSON.stringify([fileUri, position.line]))}`;
-          md.appendMarkdown(
-            `[📋 ${t('复制', 'Copy')}](${copyCmdExp})  [🔄 ${t('重新解释', 'Re-explain')}](${reCmd})  ` +
-            `[🗑 ${t('删除', 'Delete')}](${delCmd})  ` +
-            `[💬 ${t('提问', 'Ask')}](${askCmd})  ` +
-            `[💭 ${t('转为注释', 'To Comment')}](${cmtCmd})`
-          );
+        if (position.character >= decoPos && position.character <= decoPos + 1) {
+          md = buildExplanationMarkdown(document, position.line, info);
         }
       }
     }

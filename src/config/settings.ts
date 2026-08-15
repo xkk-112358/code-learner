@@ -6,6 +6,17 @@ import * as vscode from 'vscode';
 
 export type AIProviderType = 'openai' | 'claude';
 
+/**
+ * How the 💡 AI explanation is attached to the code:
+ *  - `inlay-hint` (default): the 💡 is an InlayHint whose tooltip shows ONLY
+ *    the AI explanation — the tooltip is rendered outside the hover-merge
+ *    system, so the language server's hover is NOT mixed in.
+ *  - `decoration`: the classic line-end 💡 decoration; hovering it goes
+ *    through the editor's hover providers, so the language server's hover
+ *    (e.g. Pylance) gets merged into the same popup.
+ */
+export type HoverCarrier = 'inlay-hint' | 'decoration';
+
 export interface CodeLearnerConfig {
   provider: AIProviderType;
   openaiEndpoint: string;
@@ -15,6 +26,7 @@ export interface CodeLearnerConfig {
   maxTokens: number;
   temperature: number;
   cacheEnabled: boolean;
+  hoverCarrier: HoverCarrier;
 }
 
 export class CodeLearnerSettings {
@@ -33,6 +45,7 @@ export class CodeLearnerSettings {
       maxTokens: config.get<number>('maxTokens', 2000),
       temperature: config.get<number>('temperature', 0.3),
       cacheEnabled: config.get<boolean>('cacheEnabled', true),
+      hoverCarrier: config.get<HoverCarrier>('hoverCarrier', 'inlay-hint'),
     };
   }
 

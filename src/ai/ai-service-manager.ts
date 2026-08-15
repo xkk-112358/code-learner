@@ -209,9 +209,22 @@ export class AIServiceManager {
     }
   }
 
+  /** Abort controller for the notebook-conversion request (non-streaming,
+   *  so it can't ride the providers' SSE abort paths). Created on demand,
+   *  reset on every abort. */
+  private notebookAbortController: AbortController | null = null;
+
+  /** Get (and create) the abort signal for a notebook conversion request. */
+  notebookSignal(): AbortSignal {
+    if (!this.notebookAbortController) this.notebookAbortController = new AbortController();
+    return this.notebookAbortController.signal;
+  }
+
   abort(): void {
     this.openAIProvider?.abort();
     this.claudeProvider?.abort();
+    this.notebookAbortController?.abort();
+    this.notebookAbortController = null;
   }
 
   /** Drop cached explanations for a file (used when explanations are deleted). */

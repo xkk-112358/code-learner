@@ -13,6 +13,8 @@ import { initState, setCodeLensProvider, setAIHover, getHoverTranslationStore } 
 import { registerAllCommands } from './commands/register';
 import { CodeLearnerCodeLensProvider, setStoragePath } from './ui/codelens-provider';
 import { AIHoverProvider } from './ui/hover-provider';
+import { registerInlayHintsProvider } from './ui/inlay-hint-provider';
+import { HoverCarrier } from './config/settings';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   // 1. Initialize global singletons
@@ -48,6 +50,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   setAIHover(aiHover);
   context.subscriptions.push(
     vscode.languages.registerHoverProvider({ pattern: '**' }, aiHover)
+  );
+
+  // 6b. 💡 carrier: the inlay hint (default) shows ONLY the AI explanation on
+  // hover — its tooltip bypasses the hover-merge system, so the language
+  // server's hover never mixes in. The `decoration` carrier keeps the classic
+  // line-end 💡 (whose hover is merged with e.g. Pylance's). Both providers
+  // stay registered; a switch just flips which one renders the 💡.
+  const carrier = vscode.workspace.getConfiguration('codeLearner').get<HoverCarrier>('hoverCarrier', 'inlay-hint');
+  codelensProvider.setUseInlayHintCarrier(carrier === 'inlay-hint');
+  context.subscriptions.push(registerInlayHintsProvider(codelensProvider));
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('codeLearner.hoverCarrier')) {
+        const c = vscode.workspace.getConfiguration('codeLearner').get<HoverCarrier>('hoverCarrier', 'inlay-hint');
+        // setUseInlayHintCarrier fires the CodeLens change event, which the
+        // inlay-hint provider forwards as onDidChangeInlayHints — the editor
+        // then re-requests hints with the new carrier.
+        codelensProvider.setUseInlayHintCarrier(c === 'inlay-hint');
+      }
+    })
   );
 
   // 7. Register all commands, event handlers, and status bar

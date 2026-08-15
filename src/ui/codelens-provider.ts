@@ -132,6 +132,10 @@ export class CodeLearnerCodeLensProvider implements vscode.CodeLensProvider {
    * Keyed by filePath.
    */
   private deletedExplanations = new Map<string, AIExplanation[]>();
+  /** In inlay-hint carrier mode the 💡 decorations are not rendered — the
+   * InlayHint provider (inlay-hint-provider.ts) shows the 💡 instead, so each
+   * explanation has exactly one visible 💡. */
+  private useInlayHintCarrier = false;
 
   /**
    * Lightweight constructor — does no I/O.
@@ -250,7 +254,35 @@ export class CodeLearnerCodeLensProvider implements vscode.CodeLensProvider {
     this.refresh();
   }
 
+  /** Whether the 💡 is currently rendered by the inlay-hint provider. */
+  isInlayHintCarrier(): boolean {
+    return this.useInlayHintCarrier;
+  }
+
+  /**
+   * Switch the 💡 carrier. In `inlay-hint` mode the 💡 decorations are
+   * dropped (the InlayHint provider renders the 💡 instead); switching back
+   * re-creates them from the store. `data` is untouched either way, so no
+   * explanation is lost on a switch.
+   */
+  setUseInlayHintCarrier(enabled: boolean): void {
+    if (this.useInlayHintCarrier === enabled) return;
+    this.useInlayHintCarrier = enabled;
+    if (enabled) {
+      for (const { deco } of this.decoMap.values()) deco.dispose();
+      this.decoMap.clear();
+    } else {
+      for (const [filePath, exps] of this.data) {
+        for (const exp of exps) {
+          this.addDeco(filePath, exp.posLine, exp.posCol, exp.tagKey, exp.anchorText);
+        }
+      }
+    }
+    this.refresh();
+  }
+
   private addDeco(filePath: string, line: number, col: number, tagKey: string, anchor: string): void {
+    if (this.useInlayHintCarrier) return; // 💡 is rendered by the inlay-hint provider
     if (this.decoMap.has(tagKey)) {
       const entry = this.decoMap.get(tagKey)!;
       for (const ed of vscode.window.visibleTextEditors) {

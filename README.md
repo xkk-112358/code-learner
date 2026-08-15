@@ -178,7 +178,7 @@ Hover over an English API symbol (e.g. a Python docstring) and click the transla
 
 <div align="center">
 
-**MIT License** · VS Code ^1.85.0 · v0.5.0
+**MIT License** · VS Code ^1.85.0 · v0.6.0
 
  Made By: xkk-112358
 

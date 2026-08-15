@@ -51,7 +51,7 @@ export async function openAsNotebook(context: vscode.ExtensionContext): Promise<
   try {
     await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: t('转换中...', 'Converting...'), cancellable: false }, async (p) => {
       p.report({ message: t('AI 分析中...', 'Analyzing...') });
-      result = await generateNotebook(document, codeLearnerSettings, storedExps);
+      result = await generateNotebook(document, codeLearnerSettings, storedExps, aiServiceManager.notebookSignal());
       p.report({ message: t('完成 (' + formatTime(Date.now() - convertStart) + ')', 'Done (' + formatTime(Date.now() - convertStart) + ')') });
     });
   } catch (e: unknown) {
@@ -77,7 +77,13 @@ export async function openAsNotebook(context: vscode.ExtensionContext): Promise<
   let n = 1;
   for (let found = true; found; ) {
     const testPath = path.join(dir, targetName);
-    try { await vscode.workspace.fs.stat(vscode.Uri.file(testPath)); n++; targetName = stem + ' (' + n + ').ipynb'; }
+    try {
+      await vscode.workspace.fs.stat(vscode.Uri.file(testPath));
+      // First collision appends (1), then (2), (3), ... — the suffix must be
+      // set BEFORE n increments so "foo (2).ipynb" is not skipped.
+      targetName = stem + ' (' + n + ').ipynb';
+      n++;
+    }
     catch { found = false; }
   }
   const tf = vscode.Uri.file(path.join(dir, targetName));

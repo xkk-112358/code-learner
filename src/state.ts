@@ -25,23 +25,31 @@ let _hoverTranslationStore: HoverTranslationStore | undefined;
 
 let _processing = false;
 let _processingTimer: ReturnType<typeof setTimeout> | undefined;
+/** Generation counter: a timed-out operation must NOT release the lock while
+ *  a NEWER operation owns it. Without this, op A's `finally` would reset
+ *  `_processing` after op B had already acquired the lock (A timed out at 60s,
+ *  B started, then A finished and cleared B's lock) — letting two requests
+ *  run concurrently and abort each other. */
+let _processingGeneration = 0;
 const LOCK_TIMEOUT_MS = 60_000;
 
 export async function withLock<T>(label: string, fn: () => Promise<T>): Promise<T | undefined> {
   if (_processing) {
     vscode.window.showWarningMessage(
       vscode.env.language.startsWith('zh')
-        ? '请等待当前操作完成'
-        : 'Please wait for current operation'
+        ? `请等待当前操作完成（正在执行：${label}）`
+        : `Please wait — "${label}" is still running`
     );
     return undefined;
   }
+  const gen = ++_processingGeneration;
   _processing = true;
 
   // Safety timeout: auto-release lock if operation hangs, and abort the
   // underlying request so it stops running (and stops writing cache/UI) in
   // the background.
   _processingTimer = setTimeout(() => {
+    if (gen !== _processingGeneration) return; // superseded by a newer operation
     _processing = false;
     _processingTimer = undefined;
     getAIServiceManager()?.abort();
@@ -52,6 +60,9 @@ export async function withLock<T>(label: string, fn: () => Promise<T>): Promise<
   catch (e: unknown) {
     const err = e instanceof Error ? e : new Error(String(e));
     let msg = err.message;
+    // A lock-timeout or user-cancel abort is not an error the user needs to
+    // see — the operation was interrupted on purpose.
+    if (/aborted|cancelled/i.test(msg)) return undefined;
     msg = msg.replace(/sk-([a-zA-Z0-9]{4})[a-zA-Z0-9]+/g, 'sk-$1****');
     msg = msg.replace(/sk-ant-([a-zA-Z0-9]{4})[a-zA-Z0-9]+/g, 'sk-ant-$1****');
     console.error(`[Code Learner] ${label}:`, msg);
@@ -59,6 +70,7 @@ export async function withLock<T>(label: string, fn: () => Promise<T>): Promise<
     return undefined;
   }
   finally {
+    if (gen !== _processingGeneration) return; // a newer operation owns the lock
     if (_processingTimer) { clearTimeout(_processingTimer); _processingTimer = undefined; }
     _processing = false;
   }
