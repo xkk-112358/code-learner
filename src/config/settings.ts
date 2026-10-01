@@ -3,6 +3,8 @@
  */
 
 import * as vscode from 'vscode';
+import { nodeRequestAndRead } from '../ai/streaming';
+import { t } from '../utils/helpers';
 
 export type AIProviderType = 'openai' | 'claude';
 
@@ -105,6 +107,44 @@ export class CodeLearnerSettings {
       await config.update(keyName, model, vscode.ConfigurationTarget.Global);
     }
 
-    vscode.window.showInformationMessage('Code Learner: ' + provider.label + ' configured!');
+    // 6. Connectivity test: cheap non-streaming request with max_tokens=1
+    const testEndpoint = endpoint || defaultEndpoint;
+    const testModel = model || defaultModel;
+    const errMsg = await testConnection(provider.target, key, testEndpoint, testModel);
+    if (errMsg === null) {
+      vscode.window.showInformationMessage(t(provider.label + ' 配置成功，连接正常！', provider.label + ' configured and connected!'));
+    } else {
+      vscode.window.showWarningMessage(t(provider.label + ' 配置成功，但连接测试失败：', provider.label + ' configured, but connection test failed: ') + errMsg);
+    }
+  }
+}
+
+/** Test AI provider connectivity with a minimal request. Returns null on success, error message on failure. */
+async function testConnection(
+  provider: AIProviderType,
+  apiKey: string,
+  endpoint: string,
+  model: string
+): Promise<string | null> {
+  const suffix = provider === 'openai' ? '/chat/completions' : '/v1/messages';
+  const url = endpoint.replace(/\/$/, '') + suffix;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (provider === 'openai') {
+    headers['Authorization'] = 'Bearer ' + apiKey;
+  } else {
+    headers['x-api-key'] = apiKey;
+    headers['anthropic-version'] = '2023-06-01';
+  }
+  const body = JSON.stringify({ model, max_tokens: 1, messages: [{ role: 'user', content: 'ping' }] });
+  try {
+    const res = await nodeRequestAndRead(url, {
+      method: 'POST', headers, body,
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (res.statusCode >= 200 && res.statusCode < 300) return null;
+    try { return JSON.parse(res.body).error?.message || 'HTTP ' + res.statusCode; }
+    catch { return res.body || 'HTTP ' + res.statusCode; }
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
   }
 }

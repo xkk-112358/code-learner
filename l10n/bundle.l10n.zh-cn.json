@@ -1,0 +1,4 @@
+{
+  "{0} configured and connected!": "{0} 配置成功，连接正常！",
+  "{0} configured, but connection test failed: {1}": "{0} 配置成功，但连接测试失败：{1}"
+}

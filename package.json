@@ -2,7 +2,7 @@
   "name": "code-learner",
   "displayName": "Code Learner",
   "description": "Open any code file as a Jupyter notebook with AI-powered cell explanations",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "publisher": "code-learner",
   "license": "MIT",
   "repository": {
@@ -35,68 +35,84 @@
     "commands": [
       {
         "command": "code-learner.openAsNotebook",
+        "category": "Code Learner",
         "title": "%code-learner.openAsNotebook%"
       },
       {
         "command": "code-learner.configure",
+        "category": "Code Learner",
         "title": "%code-learner.configure%"
       },
       {
         "command": "code-learner.explainCell",
+        "category": "Code Learner",
         "title": "%code-learner.explainCell%",
         "icon": "$(lightbulb)"
       },
       {
         "command": "code-learner.explainCellBelow",
+        "category": "Code Learner",
         "title": "%code-learner.explainCellBelow%",
         "icon": "$(add)"
       },
       {
         "command": "code-learner.explainSelected",
+        "category": "Code Learner",
         "title": "%code-learner.explainSelected%"
       },
       {
         "command": "code-learner.convertAllToComments",
+        "category": "Code Learner",
         "title": "%code-learner.convertAllToComments%"
       },
       {
         "command": "code-learner.deleteAtCursor",
+        "category": "Code Learner",
         "title": "%code-learner.deleteAtCursor%"
       },
       {
         "command": "code-learner.reExplain",
+        "category": "Code Learner",
         "title": "%code-learner.reExplain%"
       },
       {
         "command": "code-learner.deleteExplanation",
+        "category": "Code Learner",
         "title": "%code-learner.deleteExplanation%"
       },
       {
         "command": "code-learner.copyQA",
+        "category": "Code Learner",
         "title": "%code-learner.copyQA%"
       },
       {
         "command": "code-learner.deleteQA",
+        "category": "Code Learner",
         "title": "%code-learner.deleteQA%"
       },
       {
         "command": "code-learner.askQuestion",
+        "category": "Code Learner",
         "title": "%code-learner.askQuestion%"
       },
       {
         "command": "code-learner.toComment",
+        "category": "Code Learner",
         "title": "%code-learner.toComment%"
       },
       {
         "command": "code-learner.copyExplanation",
+        "category": "Code Learner",
         "title": "%code-learner.copyExplanation%"
       },
       {
         "command": "code-learner.translateHover",
+        "category": "Code Learner",
         "title": "%code-learner.translateHover%"
       },
       {
         "command": "code-learner.showOriginalHover",
+        "category": "Code Learner",
         "title": "%code-learner.showOriginalHover%"
       }
     ],
