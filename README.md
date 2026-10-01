@@ -33,7 +33,7 @@
 
 **1. 配置 AI 提供商**
 
-按 `Ctrl+Shift+P` 打开命令面板，搜索 `Code Learner: Configure AI Provider`，选择 OpenAI 或 Claude 并输入 API Key。
+按 `Ctrl+Shift+P` 打开命令面板，搜索 `Code Learner: Configure AI Provider`，选择 OpenAI 或 Claude 并输入 API Key。配置完成后会自动测试连接是否成功。
 
 ![配置 AI 提供商](https://raw.githubusercontent.com/xkk-112358/code-learner/main/pictures/3.png)
 
@@ -116,7 +116,7 @@
 
 **1. Configure AI Provider**
 
-Press `Ctrl+Shift+P`, search for `Code Learner: Configure AI Provider`, choose OpenAI or Claude and enter your API key.
+Press `Ctrl+Shift+P`, search for `Code Learner: Configure AI Provider`, choose OpenAI or Claude and enter your API key. The connection is automatically tested after configuration.
 
 ![Configure AI Provider](https://raw.githubusercontent.com/xkk-112358/code-learner/main/pictures/3.png)
 
