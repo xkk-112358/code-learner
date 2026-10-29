@@ -14,7 +14,7 @@ import {
   resolveTranslationTarget,
   restorePlaceholders,
 } from '../ai/hover-translator';
-import { buildExplanationMarkdown } from './hover-content';
+import { buildExplanationMarkdown, latexToUnicode } from './hover-content';
 import { t } from '../utils/helpers';
 
 /**
@@ -119,7 +119,9 @@ export class AIHoverProvider implements vscode.HoverProvider {
               // Restored code blocks/inline code render verbatim (never as
               // links) and must NOT be sanitized — escaping a colon inside
               // code would show as a literal `\:` (e.g. validation_data\:).
-              const zh = restorePlaceholders(sanitizeAiContent(entry.zh), map);
+              // LaTeX last: sanitize + restore first so latexToUnicode's own
+              // code-block protection sees the restored code verbatim.
+              const zh = latexToUnicode(restorePlaceholders(sanitizeAiContent(entry.zh), map));
               const hideCmd = `command:code-learner.showOriginalHover?${encodeURIComponent(JSON.stringify([document.uri, position.line, position.character, hash]))}`;
               const retransCmd = `command:code-learner.translateHover?${encodeURIComponent(JSON.stringify([document.uri, position.line, position.character, hash, true]))}`;
               translationBlock = `\n\n---\n\n${zh}\n\n[🔙 ${target.hide}](${hideCmd})  [🔄 ${target.retranslate}](${retransCmd})`;
