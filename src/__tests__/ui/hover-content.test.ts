@@ -59,4 +59,25 @@ describe('latexToUnicode', () => {
   it('supports \\(...\\) delimiters', () => {
     expect(latexToUnicode('\\(x^2 + y^2\\)')).toBe('x² + y²');
   });
+
+  it('converts \\operatorname and mixed bare formulas', () => {
+    const text = 'This is equivalent to separately sampling the real (\\operatorname{Re}) and imaginary (\\operatorname{Im}) part of \\text{out}_i as';
+    expect(latexToUnicode(text)).toBe('This is equivalent to separately sampling the real (Re) and imaginary (Im) part of outᵢ as');
+  });
+
+  it('converts RST :math: roles and drops the wrapper', () => {
+    const text = 'This is equivalent to separately sampling the real :math:`(\\operatorname{Re})` and imaginary\n    :math:`(\\operatorname{Im})` part of :math:`\\text{out}_i` as';
+    expect(latexToUnicode(text)).toBe(
+      'This is equivalent to separately sampling the real (Re) and imaginary\n    (Im) part of outᵢ as'
+    );
+  });
+
+  it('does not convert :math: inside fenced code blocks', () => {
+    expect(latexToUnicode('```\n:math:`x^2`\n```')).toBe('```\n:math:`x^2`\n```');
+  });
+
+  it('converts torch-style docstring math with \\operatorname and \\quad', () => {
+    const math = '\\operatorname{Re}(\\text{out}_{i}) \\sim \\mathcal{N}(0, \\frac{1}{2}),\\quad\\operatorname{Im}(\\text{out}_{i}) \\sim \\mathcal{N}(0, \\frac{1}{2})';
+    expect(latexToUnicode(math)).toBe('Re(outᵢ) ∼ N(0, (1)/(2)), Im(outᵢ) ∼ N(0, (1)/(2))');
+  });
 });

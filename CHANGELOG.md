@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.6.3
+
+### 🔧 修复
+
+- **RST 数学角色** — Sphinx/numpy 文档的 `:math:`...`` 语法现在能正确渲染，`(\operatorname{Re})` → `(Re)`，包装自动去掉
+- **`\operatorname` 与间距命令** — `\operatorname{Re}`、`\operatorname{Im}`、`\quad`、`\qquad` 等此前原样显示的公式现已支持
+- **旧缓存译文即时生效** — 转换在显示时进行，之前缓存的译文无需重新翻译即可渲染
+
+---
+
 ## v0.6.2
 
 ### ✨ 新功能

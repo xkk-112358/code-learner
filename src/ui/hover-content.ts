@@ -39,12 +39,15 @@ export function sanitizeAiContent(text: string): string {
  * is needed.
  */
 export function latexToUnicode(text: string): string {
-  // Protect code blocks / inline code first: math delimiters inside code
+  // Protect code blocks / inline code: math delimiters inside code
   // (e.g. `$PATH` in a shell sample) must never be converted.
   const stash: string[] = [];
-  const protectedText = text
-    .replace(/```[\s\S]*?```/g, (m) => `\u0000${stash.push(m) - 1}\u0000`)
-    .replace(/`[^`\n]+`/g, (m) => `\u0000${stash.push(m) - 1}\u0000`);
+  const noFences = text.replace(/```[\s\S]*?```/g, (m) => `\u0000${stash.push(m) - 1}\u0000`);
+  // RST math roles (:math:`...`) from Sphinx/numpy docstrings — convert the
+  // content and drop the wrapper. Must run before the inline-code stash,
+  // which would otherwise hide the span from every pass below.
+  const mathRoles = noFences.replace(/:math:`([^`\n]+)`/g, (_, m: string) => latexBlock(m));
+  const protectedText = mathRoles.replace(/`[^`\n]+`/g, (m) => `\u0000${stash.push(m) - 1}\u0000`);
   const converted = protectedText
     .replace(/\$\$([\s\S]+?)\$\$/g, (_, m: string) => latexBlock(m))
     // Inline math: no space right after $ and no space right before the
@@ -93,8 +96,8 @@ const BARE_CMD_RE = new RegExp(
     [
       ...new Set([
         ...SYMBOLS.map(([c]) => c.slice(1)),
-        'dfrac', 'frac', 'sqrt', 'left', 'right',
-        'mathrm', 'mathcal', 'mathbb', 'mathbf', 'mathit', 'mathsf', 'text', 'textrm', 'textbf', 'emph',
+        'dfrac', 'frac', 'sqrt', 'left', 'right', 'quad', 'qquad',
+        'mathrm', 'mathcal', 'mathbb', 'mathbf', 'mathit', 'mathsf', 'operatorname', 'text', 'textrm', 'textbf', 'emph',
         'log', 'ln', 'exp', 'sin', 'cos', 'tan', 'min', 'max', 'lim', 'mod',
       ]),
     ]
@@ -126,7 +129,7 @@ function toSub(e: string): string {
 function latexBlock(m: string): string {
   let s = m;
   // Wrapping commands: keep inner content.
-  s = s.replace(/\\(?:mathrm|mathcal|mathbb|mathbf|mathit|mathsf|text|textrm|textbf|emph)\{([^{}]*)\}/g, '$1');
+  s = s.replace(/\\(?:mathrm|mathcal|mathbb|mathbf|mathit|mathsf|operatorname|text|textrm|textbf|emph)\{([^{}]*)\}/g, '$1');
   // Function names: strip the backslash (\log → log).
   s = s.replace(/\\(log|ln|exp|sin|cos|tan|min|max|lim|mod)\b/g, '$1');
   s = s.replace(/\\dfrac/g, '\\frac');
@@ -139,7 +142,8 @@ function latexBlock(m: string): string {
   s = s.replace(/_(\S)/g, (_, e: string) => toSub(e));
   for (const [cmd, uni] of SYMBOLS) s = s.split(cmd).join(uni);
   s = s.replace(/\\(left|right)/g, '');
-  s = s.replace(/\\[;,]/g, ''); // spacing commands \, \;
+  s = s.replace(/\\(qquad|quad)/g, ' '); // spacing commands
+  s = s.replace(/\\[;,]/g, '');
   s = s.replace(/\\([a-zA-Z]+)/g, '$1'); // unknown commands: drop the backslash
   s = s.replace(/[{}]/g, ''); // remaining braces are pure grouping
   return s;
