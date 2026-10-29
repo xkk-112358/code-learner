@@ -47,7 +47,14 @@ export function latexToUnicode(text: string): string {
   // content and drop the wrapper. Must run before the inline-code stash,
   // which would otherwise hide the span from every pass below.
   const mathRoles = noFences.replace(/:math:`([^`\n]+)`/g, (_, m: string) => latexBlock(m));
-  const protectedText = mathRoles.replace(/`[^`\n]+`/g, (m) => `\u0000${stash.push(m) - 1}\u0000`);
+  // Backtick spans are normally protected as inline code, but spans restored
+  // from translation placeholders can be RST math (`\text{out}_i`) with the
+  // `:math:` label translated away — convert those instead of protecting.
+  const protectedText = mathRoles.replace(/`[^`\n]+`/g, (m) => {
+    const inner = m.slice(1, -1);
+    if (inner.includes('\\') && BARE_CMD_RE.test(inner)) return latexBlock(inner);
+    return `\u0000${stash.push(m) - 1}\u0000`;
+  });
   const converted = protectedText
     .replace(/\$\$([\s\S]+?)\$\$/g, (_, m: string) => latexBlock(m))
     // Inline math: no space right after $ and no space right before the

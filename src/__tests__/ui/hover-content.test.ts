@@ -80,4 +80,14 @@ describe('latexToUnicode', () => {
     const math = '\\operatorname{Re}(\\text{out}_{i}) \\sim \\mathcal{N}(0, \\frac{1}{2}),\\quad\\operatorname{Im}(\\text{out}_{i}) \\sim \\mathcal{N}(0, \\frac{1}{2})';
     expect(latexToUnicode(math)).toBe('Re(outᵢ) ∼ N(0, (1)/(2)), Im(outᵢ) ∼ N(0, (1)/(2))');
   });
+
+  it('converts backtick-wrapped math restored from placeholders', () => {
+    const text = '这等价于分别对 `\\text{out}_i` 的实部 `(\\operatorname{Re})` 和虚部 `(\\operatorname{Im})` 进行采样，即';
+    expect(latexToUnicode(text)).toBe('这等价于分别对 outᵢ 的实部 (Re) 和虚部 (Im) 进行采样，即');
+  });
+
+  it('still protects non-math backtick spans', () => {
+    expect(latexToUnicode('use `C:\\Users\\foo\\bar.py` here')).toBe('use `C:\\Users\\foo\\bar.py` here');
+    expect(latexToUnicode('call `torch.randn(size)` here')).toBe('call `torch.randn(size)` here');
+  });
 });
