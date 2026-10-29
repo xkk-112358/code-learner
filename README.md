@@ -22,6 +22,7 @@
 - 🤖 **双 AI 提供商** — OpenAI 兼容 API（含 Azure、Ollama）+ Anthropic Claude
 - 🌐 **中英讲解** — 跟随 VS Code 语言设置自动切换
 - 📖 **悬停翻译** — 悬浮英文 API 文档，一键 AI 翻译；目标语言跟随 VS Code 界面语言（中文/日语/法语…）；译文按内容哈希全局缓存，换文件、重启 VS Code 后直接显示，代码/参数名/URL 绝不误翻
+- 🔣 **LaTeX 渲染** — 悬停弹窗中的 AI 解释与文档翻译自动将 LaTeX 公式转换为 Unicode 显示（上标、下标、希腊字母、分数、根号等）
 - ⚡ **流式响应** — AI 解释逐字实时输出
 - 💡 **三种交互** — CodeLens / 悬停弹窗 / 侧边栏，支持追问互动
 - 💾 **智能缓存** — LRU 缓存避免重复调用，节省费用
@@ -63,7 +64,7 @@
 
 **6. 翻译悬停文档**
 
-悬浮英文 API 符号（如 Python 的 docstring），点击悬浮窗中的翻译按钮，AI 立即将英文文档翻译为你的界面语言（中文界面译成中文、日语界面译成日语，依此类推）；译文支持「🔙 隐藏翻译」「🔄 重新翻译」，并全局缓存——任何文件、任何位置、重启 VS Code 后都直接显示相同译文。
+悬浮英文 API 符号（如 Python 的 docstring），点击悬浮窗中的翻译按钮，AI 立即将英文文档翻译为你的界面语言（中文界面译成中文、日语界面译成日语，依此类推）；译文支持「🔙 隐藏翻译」「🔄 重新翻译」，并全局缓存——任何文件、任何位置、重启 VS Code 后都直接显示相同译文。文档与译文中的 LaTeX 公式会自动渲染为 Unicode 显示。
 
 ### 📋 命令
 
@@ -105,6 +106,7 @@
 - 🤖 **Dual AI** — OpenAI-compatible APIs (Azure, Ollama) + Anthropic Claude
 - 🌐 **Bilingual** — Auto-switch between Chinese and English
 - 📖 **Hover translation** — one-click AI translation of English API docs in the hover; the target language follows your VS Code UI language (Chinese, Japanese, French, ...); translations are globally cached by content hash (any file, any position, after restart) and code/parameter names/URLs are never mistranslated
+- 🔣 **LaTeX rendering** — LaTeX formulas in hover AI explanations and doc translations are auto-converted to Unicode (superscripts, subscripts, Greek letters, fractions, square roots, ...)
 - ⚡ **Streaming** — Real-time AI output character by character
 - 💡 **3 UI modes** — CodeLens / Hover popup / Sidebar, with follow-up Q&A
 - 💾 **Smart cache** — LRU cache saves API calls and costs
@@ -146,7 +148,7 @@ The converted notebook preserves the original code structure for cell-by-cell br
 
 **6. Translate Hover Docs**
 
-Hover over an English API symbol (e.g. a Python docstring) and click the translate button — the AI translates the documentation into your UI language instantly (Chinese UI → Chinese, Japanese UI → Japanese, and so on). The translation supports "Hide Translation" / "Re-translate" and is cached globally: any file, any position, even after restarting VS Code shows the same translation.
+Hover over an English API symbol (e.g. a Python docstring) and click the translate button — the AI translates the documentation into your UI language instantly (Chinese UI → Chinese, Japanese UI → Japanese, and so on). The translation supports "Hide Translation" / "Re-translate" and is cached globally: any file, any position, even after restarting VS Code shows the same translation. LaTeX formulas in the docs and translation are rendered as Unicode automatically.
 
 ### 📋 Commands
 
@@ -178,7 +180,7 @@ Hover over an English API symbol (e.g. a Python docstring) and click the transla
 
 <div align="center">
 
-**MIT License** · VS Code ^1.85.0 · v0.6.0
+**MIT License** · VS Code ^1.85.0 · v0.6.2
 
  Made By: xkk-112358
 
